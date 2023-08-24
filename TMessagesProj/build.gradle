@@ -2,6 +2,9 @@ import org.gradle.nativeplatform.platform.internal.DefaultNativePlatform
 
 apply plugin: 'com.android.library'
 
+def signingProps = new Properties()
+signingProps.load(new FileInputStream(file('../signing.properties')))
+
 repositories {
     mavenCentral()
     google()
@@ -110,6 +113,11 @@ android {
             buildConfigField "boolean", "DEBUG_VERSION", "true"
             buildConfigField "boolean", "DEBUG_PRIVATE_VERSION", "true"
             buildConfigField "boolean", "BUILD_HOST_IS_WINDOWS", isWindows
+            buildConfigField "int", "APP_ID", "${signingProps.APP_ID}"
+            buildConfigField "String", "APP_HASH", "\"${signingProps.APP_HASH}\""
+            buildConfigField "String", "SAFETYNET_KEY", "\"${signingProps.SAFETYNET_KEY}\""
+            buildConfigField "String", "GOOGLE_AUTH_CLIENT_ID", "\"${signingProps.GOOGLE_AUTH_CLIENT_ID}\""
+            buildConfigField "String", "HUAWEI_APP_ID", "\"${signingProps.HUAWEI_APP_ID}\""
         }
 
         HA_private {
@@ -123,6 +131,11 @@ android {
             buildConfigField "boolean", "DEBUG_VERSION", "true"
             buildConfigField "boolean", "DEBUG_PRIVATE_VERSION", "true"
             buildConfigField "boolean", "BUILD_HOST_IS_WINDOWS", isWindows
+            buildConfigField "int", "APP_ID", "${signingProps.APP_ID}"
+            buildConfigField "String", "APP_HASH", "\"${signingProps.APP_HASH}\""
+            buildConfigField "String", "SAFETYNET_KEY", "\"${signingProps.SAFETYNET_KEY}\""
+            buildConfigField "String", "GOOGLE_AUTH_CLIENT_ID", "\"${signingProps.GOOGLE_AUTH_CLIENT_ID}\""
+            buildConfigField "String", "HUAWEI_APP_ID", "\"${signingProps.HUAWEI_APP_ID}\""
         }
 
         HA_public {
@@ -136,6 +149,11 @@ android {
             buildConfigField "boolean", "DEBUG_VERSION", "true"
             buildConfigField "boolean", "DEBUG_PRIVATE_VERSION", "false"
             buildConfigField "boolean", "BUILD_HOST_IS_WINDOWS", isWindows
+            buildConfigField "int", "APP_ID", "${signingProps.APP_ID}"
+            buildConfigField "String", "APP_HASH", "\"${signingProps.APP_HASH}\""
+            buildConfigField "String", "SAFETYNET_KEY", "\"${signingProps.SAFETYNET_KEY}\""
+            buildConfigField "String", "GOOGLE_AUTH_CLIENT_ID", "\"${signingProps.GOOGLE_AUTH_CLIENT_ID}\""
+            buildConfigField "String", "HUAWEI_APP_ID", "\"${signingProps.HUAWEI_APP_ID}\""
         }
 
         standalone {
@@ -149,6 +167,11 @@ android {
             buildConfigField "boolean", "DEBUG_VERSION", "false"
             buildConfigField "boolean", "DEBUG_PRIVATE_VERSION", "false"
             buildConfigField "boolean", "BUILD_HOST_IS_WINDOWS", isWindows
+            buildConfigField "int", "APP_ID", "${signingProps.APP_ID}"
+            buildConfigField "String", "APP_HASH", "\"${signingProps.APP_HASH}\""
+            buildConfigField "String", "SAFETYNET_KEY", "\"${signingProps.SAFETYNET_KEY}\""
+            buildConfigField "String", "GOOGLE_AUTH_CLIENT_ID", "\"${signingProps.GOOGLE_AUTH_CLIENT_ID}\""
+            buildConfigField "String", "HUAWEI_APP_ID", "\"${signingProps.HUAWEI_APP_ID}\""
         }
 
         release {
@@ -163,6 +186,11 @@ android {
             buildConfigField "boolean", "DEBUG_VERSION", "false"
             buildConfigField "boolean", "DEBUG_PRIVATE_VERSION", "false"
             buildConfigField "boolean", "BUILD_HOST_IS_WINDOWS", isWindows
+            buildConfigField "int", "APP_ID", "${signingProps.APP_ID}"
+            buildConfigField "String", "APP_HASH", "\"${signingProps.APP_HASH}\""
+            buildConfigField "String", "SAFETYNET_KEY", "\"${signingProps.SAFETYNET_KEY}\""
+            buildConfigField "String", "GOOGLE_AUTH_CLIENT_ID", "\"${signingProps.GOOGLE_AUTH_CLIENT_ID}\""
+            buildConfigField "String", "HUAWEI_APP_ID", "\"${signingProps.HUAWEI_APP_ID}\""
         }
     }
 }
