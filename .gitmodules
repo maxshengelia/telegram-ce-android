@@ -1,0 +1,4 @@
+[submodule "signing"]
+	path = signing
+	url = git@github.com:maxshengelia/telegram-signing.git
+	branch = master

@@ -2,7 +2,7 @@ apply plugin: 'com.android.application'
 apply plugin: 'com.huawei.agconnect'
 
 def signingProps = new Properties()
-signingProps.load(new FileInputStream(file('../signing.properties')))
+signingProps.load(new FileInputStream(file('../signing/signing.properties')))
 
 repositories {
     mavenCentral()
