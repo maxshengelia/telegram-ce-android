@@ -80,6 +80,7 @@ import org.telegram.messenger.R;
 import org.telegram.messenger.SendMessagesHelper;
 import org.telegram.messenger.SharedConfig;
 import org.telegram.messenger.UserConfig;
+import org.telegram.messenger.UserObject;
 import org.telegram.messenger.Utilities;
 import org.telegram.messenger.audioinfo.AudioInfo;
 import org.telegram.tgnet.TLRPC;
@@ -457,6 +458,12 @@ public class AudioPlayerAlert extends BottomSheet implements NotificationCenter.
                         actionBar.setTitle(ContactsController.formatName(user.first_name, user.last_name));
                     }
                 }
+            } else if (did == UserConfig.getInstance(currentAccount).getClientUserId()) {
+                if (messageObject.getSavedDialogId() == UserObject.ANONYMOUS) {
+                    actionBar.setTitle(LocaleController.getString(R.string.AnonymousForward));
+                } else {
+                    actionBar.setTitle(LocaleController.getString(R.string.SavedMessages));
+                }
             } else if (DialogObject.isUserDialog(did)) {
                 TLRPC.User user = MessagesController.getInstance(currentAccount).getUser(did);
                 if (user != null) {
@@ -573,7 +580,7 @@ public class AudioPlayerAlert extends BottomSheet implements NotificationCenter.
                 final TextView textView = new TextView(context);
                 textView.setTextColor(getThemedColor(Theme.key_player_actionBarTitle));
                 textView.setTextSize(TypedValue.COMPLEX_UNIT_DIP, 17);
-                textView.setTypeface(AndroidUtilities.getTypeface("fonts/rmedium.ttf"));
+                textView.setTypeface(AndroidUtilities.bold());
                 textView.setEllipsize(TextUtils.TruncateAt.END);
                 textView.setSingleLine(true);
                 return textView;
@@ -1111,7 +1118,7 @@ public class AudioPlayerAlert extends BottomSheet implements NotificationCenter.
         emptyTitleTextView.setTextColor(getThemedColor(Theme.key_dialogEmptyText));
         emptyTitleTextView.setGravity(Gravity.CENTER);
         emptyTitleTextView.setText(LocaleController.getString("NoAudioFound", R.string.NoAudioFound));
-        emptyTitleTextView.setTypeface(AndroidUtilities.getTypeface("fonts/rmedium.ttf"));
+        emptyTitleTextView.setTypeface(AndroidUtilities.bold());
         emptyTitleTextView.setTextSize(TypedValue.COMPLEX_UNIT_DIP, 17);
         emptyTitleTextView.setPadding(AndroidUtilities.dp(40), 0, AndroidUtilities.dp(40), 0);
         emptyView.addView(emptyTitleTextView, LayoutHelper.createLinear(LayoutHelper.WRAP_CONTENT, LayoutHelper.WRAP_CONTENT, Gravity.CENTER, 0, 11, 0, 0));

@@ -16,6 +16,7 @@ import android.graphics.SurfaceTexture;
 import android.media.AudioManager;
 import android.media.MediaFormat;
 import android.net.Uri;
+import android.os.Build;
 import android.os.Handler;
 import android.os.Looper;
 import android.view.Surface;
@@ -31,9 +32,11 @@ import com.google.android.exoplayer2.DefaultRenderersFactory;
 import com.google.android.exoplayer2.ExoPlayer;
 import com.google.android.exoplayer2.Format;
 import com.google.android.exoplayer2.MediaItem;
+import com.google.android.exoplayer2.MediaMetadata;
 import com.google.android.exoplayer2.PlaybackException;
 import com.google.android.exoplayer2.PlaybackParameters;
 import com.google.android.exoplayer2.Player;
+import com.google.android.exoplayer2.SeekParameters;
 import com.google.android.exoplayer2.analytics.AnalyticsListener;
 import com.google.android.exoplayer2.audio.AudioAttributes;
 import com.google.android.exoplayer2.audio.AudioCapabilities;
@@ -112,6 +115,7 @@ public class VideoPlayer implements Player.Listener, VideoListener, AnalyticsLis
     private boolean isStreaming;
     private boolean autoplay;
     private boolean mixedAudio;
+    public boolean allowMultipleInstances;
 
     private boolean triedReinit;
 
@@ -166,7 +170,7 @@ public class VideoPlayer implements Player.Listener, VideoListener, AnalyticsLis
     public void didReceivedNotification(int id, int account, Object... args) {
         if (id == NotificationCenter.playerDidStartPlaying) {
             VideoPlayer p = (VideoPlayer) args[0];
-            if (p != this && isPlaying()) {
+            if (p != this && isPlaying() && !allowMultipleInstances) {
                 pause();
             }
         }
@@ -216,6 +220,8 @@ public class VideoPlayer implements Player.Listener, VideoListener, AnalyticsLis
                 player.setVideoTextureView(textureView);
             } else if (surface != null) {
                 player.setVideoSurface(surface);
+            } else if (surfaceView != null) {
+                player.setVideoSurfaceView(surfaceView);
             }
             player.setPlayWhenReady(autoplay);
             player.setRepeatMode(looping ? ExoPlayer.REPEAT_MODE_ALL : ExoPlayer.REPEAT_MODE_OFF);
@@ -317,7 +323,7 @@ public class VideoPlayer implements Player.Listener, VideoListener, AnalyticsLis
         videoPlayerReady = false;
         mixedAudio = false;
         currentUri = uri;
-        String scheme = uri.getScheme();
+        String scheme = uri != null ? uri.getScheme() : null;
         isStreaming = scheme != null && !scheme.startsWith("file");
         ensurePlayerCreated();
         MediaSource mediaSource = mediaSourceFromUri(uri, type);
@@ -515,7 +521,12 @@ public class VideoPlayer implements Player.Listener, VideoListener, AnalyticsLis
     }
 
     public void seekTo(long positionMs) {
+        seekTo(positionMs, false);
+    }
+
+    public void seekTo(long positionMs, boolean fast) {
         if (player != null) {
+            player.setSeekParameters(fast ? SeekParameters.CLOSEST_SYNC : SeekParameters.EXACT);
             player.seekTo(positionMs);
         }
     }
@@ -548,11 +559,20 @@ public class VideoPlayer implements Player.Listener, VideoListener, AnalyticsLis
         return player != null && lastReportedPlaybackState == ExoPlayer.STATE_BUFFERING;
     }
 
+
+    private boolean handleAudioFocus = false;
+    public void handleAudioFocus(boolean handleAudioFocus) {
+        this.handleAudioFocus = handleAudioFocus;
+        if (player != null) {
+            player.setAudioAttributes(player.getAudioAttributes(), handleAudioFocus);
+        }
+    }
+
     public void setStreamType(int type) {
         if (player != null) {
             player.setAudioAttributes(new AudioAttributes.Builder()
                 .setUsage(type == AudioManager.STREAM_VOICE_CALL ? C.USAGE_VOICE_COMMUNICATION : C.USAGE_MEDIA)
-                .build(), false);
+                .build(), handleAudioFocus);
         }
         if (audioPlayer != null) {
             audioPlayer.setAudioAttributes(new AudioAttributes.Builder()
@@ -858,6 +878,18 @@ public class VideoPlayer implements Player.Listener, VideoListener, AnalyticsLis
             if (byteBuffer.get() == 0) {
                 hdrInfo.maxlum = byteBuffer.getShort(17);
                 hdrInfo.minlum = byteBuffer.getShort(19) * 0.0001f;
+            }
+
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.N) {
+                if (mediaFormat.containsKey(MediaFormat.KEY_COLOR_TRANSFER)) {
+                    hdrInfo.colorTransfer = mediaFormat.getInteger(MediaFormat.KEY_COLOR_TRANSFER);
+                }
+                if (mediaFormat.containsKey(MediaFormat.KEY_COLOR_STANDARD)) {
+                    hdrInfo.colorStandard = mediaFormat.getInteger(MediaFormat.KEY_COLOR_STANDARD);
+                }
+                if (mediaFormat.containsKey(MediaFormat.KEY_COLOR_RANGE)) {
+                    hdrInfo.colorRange = mediaFormat.getInteger(MediaFormat.KEY_COLOR_RANGE);
+                }
             }
         } catch (Exception ignore) {
             hdrInfo.maxlum = hdrInfo.minlum = 0;

@@ -8,15 +8,15 @@ import android.view.Gravity;
 import android.view.View;
 
 import androidx.annotation.NonNull;
+import androidx.core.graphics.ColorUtils;
 
-import org.checkerframework.checker.units.qual.A;
 import org.telegram.messenger.AndroidUtilities;
 import org.telegram.messenger.Utilities;
 import org.telegram.ui.Components.AnimatedFloat;
 import org.telegram.ui.Components.AnimatedTextView;
 import org.telegram.ui.Components.CubicBezierInterpolator;
 
-public class VideoTimerView extends View {
+public class VideoTimerView extends View implements FlashViews.Invertable {
 
     private Paint backgroundPaint = new Paint(Paint.ANTI_ALIAS_FLAG);
     private Paint recordPaint = new Paint(Paint.ANTI_ALIAS_FLAG);
@@ -33,7 +33,7 @@ public class VideoTimerView extends View {
         textDrawable.setAnimationProperties(.3f, 0, 250, CubicBezierInterpolator.EASE_OUT_QUINT);
         textDrawable.setTextSize(AndroidUtilities.dp(13));
         textDrawable.setTextColor(0xffffffff);
-        textDrawable.setTypeface(AndroidUtilities.getTypeface(AndroidUtilities.TYPEFACE_ROBOTO_MEDIUM));
+        textDrawable.setTypeface(AndroidUtilities.bold());
         textDrawable.setCallback(this);
         textDrawable.setGravity(Gravity.CENTER_HORIZONTAL);
 
@@ -98,6 +98,11 @@ public class VideoTimerView extends View {
 
         textDrawable.setBounds((int) (AndroidUtilities.rectTmp.left + recordingPad), (int) AndroidUtilities.rectTmp.top - AndroidUtilities.dp(1), (int) AndroidUtilities.rectTmp.right, (int) AndroidUtilities.rectTmp.bottom);
         textDrawable.draw(canvas);
+    }
+
+    public void setInvert(float invert) {
+        backgroundPaint.setColor(ColorUtils.blendARGB(0x3f000000, 0x10000000, invert));
+        textDrawable.setTextColor(ColorUtils.blendARGB(0xffffffff, 0xff000000, invert));
     }
 
 }

@@ -34,7 +34,6 @@ import android.graphics.drawable.ColorDrawable;
 import android.graphics.drawable.Drawable;
 import android.graphics.drawable.GradientDrawable;
 import android.text.TextUtils;
-import android.util.Log;
 import android.util.Size;
 import android.util.TypedValue;
 import android.view.Gravity;
@@ -69,7 +68,7 @@ import org.telegram.messenger.MessagesController;
 import org.telegram.messenger.NotificationCenter;
 import org.telegram.messenger.R;
 import org.telegram.messenger.UserConfig;
-import org.telegram.ui.Components.CubicBezierInterpolator;
+import org.telegram.messenger.Utilities;
 import org.telegram.ui.Components.LayoutHelper;
 
 import java.util.ArrayList;
@@ -104,6 +103,11 @@ public final class FloatingToolbar {
     private Runnable premiumLockClickListener;
     public void setOnPremiumLockClick(Runnable listener) {
         premiumLockClickListener = listener;
+    }
+
+    private Utilities.Callback0Return<Boolean> quoteShowCallback;
+    public void setQuoteShowVisible(Utilities.Callback0Return<Boolean> callback) {
+        quoteShowCallback = callback;
     }
 
     private final OnLayoutChangeListener mOrientationChangeHandler = new OnLayoutChangeListener() {
@@ -236,6 +240,8 @@ public final class FloatingToolbar {
                 Menu subMenu = menuItem.getSubMenu();
                 if (subMenu != null) {
                     menuItems.addAll(getVisibleAndEnabledMenuItems(subMenu));
+                } else if (menuItem.getItemId() == R.id.menu_quote && (quoteShowCallback != null && !quoteShowCallback.run())) {
+                    continue;
                 } else if (menuItem.getItemId() != TRANSLATE && (menuItem.getItemId() != R.id.menu_regular || premiumLockClickListener == null)) {
                     menuItems.add(menuItem);
                 }
@@ -253,14 +259,15 @@ public final class FloatingToolbar {
         mWindowView.removeOnLayoutChangeListener(mOrientationChangeHandler);
     }
 
-    private static final List<Integer> premiumOptions = Arrays.asList(
+    public static final List<Integer> premiumOptions = Arrays.asList(
             R.id.menu_bold,
             R.id.menu_italic,
             R.id.menu_strike,
             R.id.menu_link,
             R.id.menu_mono,
             R.id.menu_underline,
-            R.id.menu_spoiler
+            R.id.menu_spoiler,
+            R.id.menu_quote
     );
 
     private final class FloatingToolbarPopup {
@@ -447,18 +454,24 @@ public final class FloatingToolbar {
                 mOverflowButtonIcon.setImageDrawable(mToOverflow);
                 mToOverflow.start();
                 closeOverflow();
-                mOverflowButton.setClickable(false);
-                mOverflowButton.setOnClickListener(null);
-                mOverflowButtonIcon.setClickable(true);
-                mOverflowButtonIcon.setOnClickListener(v -> onBackPressed());
             } else {
                 mOverflowButtonIcon.setImageDrawable(mToArrow);
                 mToArrow.start();
                 openOverflow();
+            }
+        }
+
+        private void updateOverflowButtonClickListener() {
+            if (mIsOverflowOpen) {
                 mOverflowButton.setClickable(true);
                 mOverflowButton.setOnClickListener(v -> onBackPressed());
                 mOverflowButtonIcon.setClickable(false);
                 mOverflowButtonIcon.setOnClickListener(null);
+            } else {
+                mOverflowButton.setClickable(false);
+                mOverflowButton.setOnClickListener(null);
+                mOverflowButtonIcon.setClickable(true);
+                mOverflowButtonIcon.setOnClickListener(v -> onBackPressed());
             }
         }
 
@@ -679,6 +692,7 @@ public final class FloatingToolbar {
             mOpenOverflowAnimation.addAnimation(overflowButtonAnimation);
             mContentContainer.startAnimation(mOpenOverflowAnimation);
             mIsOverflowOpen = true;
+            updateOverflowButtonClickListener();
             mMainPanel.animate().alpha(0).withLayer().setInterpolator(mLinearOutSlowInInterpolator).setDuration(250).start();
             RelativeLayout.LayoutParams lp = (RelativeLayout.LayoutParams) mOverflowButton.getLayoutParams();
             lp.width = mOverflowPanel.getWidth();
@@ -746,6 +760,7 @@ public final class FloatingToolbar {
             mCloseOverflowAnimation.addAnimation(overflowButtonAnimation);
             mContentContainer.startAnimation(mCloseOverflowAnimation);
             mIsOverflowOpen = false;
+            updateOverflowButtonClickListener();
             mMainPanel.animate()
                     .alpha(1).withLayer()
                     .setInterpolator(mFastOutLinearInInterpolator)
@@ -990,10 +1005,18 @@ public final class FloatingToolbar {
                 });
             }
             final int size = menuItems.size();
-            final boolean premiumLocked = MessagesController.getInstance(UserConfig.selectedAccount).premiumLocked;
+            final boolean premiumLocked = MessagesController.getInstance(UserConfig.selectedAccount).premiumFeaturesBlocked();
             for (int i = 0; i < size; i++) {
                 final MenuItem menuItem = menuItems.get(i);
-                if (!premiumOptions.contains(menuItem.getItemId()) || !premiumLocked) {
+                final boolean show;
+                if (premiumLockClickListener == null) {
+                    show = true;
+                } else if (premiumOptions.contains(menuItem.getItemId())) {
+                    show = !premiumLocked;
+                } else {
+                    show = true;
+                }
+                if (show) {
                     overflowPanelAdapter.add(menuItem);
                 }
             }
@@ -1031,6 +1054,7 @@ public final class FloatingToolbar {
             mOverflowPanelSize = null;
             mMainPanelSize = null;
             mIsOverflowOpen = false;
+            updateOverflowButtonClickListener();
             mMainPanel.removeAllViews();
             ArrayAdapter<MenuItem> overflowPanelAdapter = (ArrayAdapter<MenuItem>) mOverflowPanel.getAdapter();
             overflowPanelAdapter.clear();
@@ -1289,7 +1313,7 @@ public final class FloatingToolbar {
         textView.setGravity(Gravity.CENTER);
         textView.setSingleLine(true);
         textView.setEllipsize(TextUtils.TruncateAt.END);
-        textView.setTypeface(AndroidUtilities.getTypeface("fonts/rmedium.ttf"));
+        textView.setTypeface(AndroidUtilities.bold());
         textView.setTextSize(TypedValue.COMPLEX_UNIT_DIP, 14);
         textView.setFocusable(false);
         textView.setImportantForAccessibility(View.IMPORTANT_FOR_ACCESSIBILITY_NO);

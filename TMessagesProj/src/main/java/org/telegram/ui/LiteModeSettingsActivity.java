@@ -39,6 +39,7 @@ import androidx.recyclerview.widget.LinearLayoutManager;
 import androidx.recyclerview.widget.RecyclerView;
 
 import org.telegram.messenger.AndroidUtilities;
+import org.telegram.messenger.BuildVars;
 import org.telegram.messenger.LiteMode;
 import org.telegram.messenger.LocaleController;
 import org.telegram.messenger.MessagesController;
@@ -65,6 +66,7 @@ import org.telegram.ui.Components.RecyclerListView;
 import org.telegram.ui.Components.SeekBarAccessibilityDelegate;
 import org.telegram.ui.Components.SeekBarView;
 import org.telegram.ui.Components.Switch;
+import org.telegram.ui.Components.ThanosEffect;
 
 import java.util.ArrayList;
 
@@ -253,10 +255,13 @@ public class LiteModeSettingsActivity extends BaseFragment {
                 items.add(Item.asCheckbox(LocaleController.getString("LiteOptionsTopics"), LiteMode.FLAG_CHAT_FORUM_TWOCOLUMN));
             }
             items.add(Item.asCheckbox(LocaleController.getString("LiteOptionsSpoiler"), LiteMode.FLAG_CHAT_SPOILER));
-            if (SharedConfig.getDevicePerformanceClass() >= SharedConfig.PERFORMANCE_CLASS_AVERAGE) {
+            if (SharedConfig.getDevicePerformanceClass() >= SharedConfig.PERFORMANCE_CLASS_AVERAGE || BuildVars.DEBUG_PRIVATE_VERSION) {
                 items.add(Item.asCheckbox(LocaleController.getString("LiteOptionsBlur"), LiteMode.FLAG_CHAT_BLUR));
             }
             items.add(Item.asCheckbox(LocaleController.getString("LiteOptionsScale"), LiteMode.FLAG_CHAT_SCALE));
+            if (ThanosEffect.supports()) {
+                items.add(Item.asCheckbox(LocaleController.getString("LiteOptionsThanos"), LiteMode.FLAG_CHAT_THANOS));
+            }
         }
         items.add(Item.asSwitch(R.drawable.msg2_call_earpiece, LocaleController.getString("LiteOptionsCalls"), LiteMode.FLAG_CALLS_ANIMATIONS));
         items.add(Item.asSwitch(R.drawable.msg2_videocall, LocaleController.getString("LiteOptionsAutoplayVideo"), LiteMode.FLAG_AUTOPLAY_VIDEOS));
@@ -474,7 +479,7 @@ public class LiteModeSettingsActivity extends BaseFragment {
 
             countTextView = new AnimatedTextView(context, false, true, true);
             countTextView.setAnimationProperties(.35f, 0, 200, CubicBezierInterpolator.EASE_OUT_QUINT);
-            countTextView.setTypeface(AndroidUtilities.getTypeface(AndroidUtilities.TYPEFACE_ROBOTO_MEDIUM));
+            countTextView.setTypeface(AndroidUtilities.bold());
             countTextView.setTextSize(dp(14));
             countTextView.setTextColor(Theme.getColor(Theme.key_windowBackgroundWhiteBlackText));
             countTextView.setImportantForAccessibility(IMPORTANT_FOR_ACCESSIBILITY_NO);
@@ -626,6 +631,9 @@ public class LiteModeSettingsActivity extends BaseFragment {
             if (SharedConfig.getDevicePerformanceClass() < SharedConfig.PERFORMANCE_CLASS_AVERAGE && (flags & LiteMode.FLAG_CHAT_BLUR) > 0) {
                 count--;
             }
+            if (!ThanosEffect.supports() && (flags & LiteMode.FLAG_CHAT_THANOS) > 0) {
+                count--;
+            }
             return count;
         }
 
@@ -697,7 +705,7 @@ public class LiteModeSettingsActivity extends BaseFragment {
 
             headerTextView = new TextView(context);
             headerTextView.setTextSize(TypedValue.COMPLEX_UNIT_DIP, 15);
-            headerTextView.setTypeface(AndroidUtilities.getTypeface(AndroidUtilities.TYPEFACE_ROBOTO_MEDIUM));
+            headerTextView.setTypeface(AndroidUtilities.bold());
             headerTextView.setTextColor(Theme.getColor(Theme.key_windowBackgroundWhiteBlueHeader));
             headerTextView.setGravity(LocaleController.isRTL ? Gravity.RIGHT : Gravity.LEFT);
             headerTextView.setText(LocaleController.getString("LiteBatteryTitle"));
@@ -714,7 +722,7 @@ public class LiteModeSettingsActivity extends BaseFragment {
                     super.onDraw(canvas);
                 }
             };
-            headerOnView.setTypeface(AndroidUtilities.getTypeface(AndroidUtilities.TYPEFACE_ROBOTO_MEDIUM));
+            headerOnView.setTypeface(AndroidUtilities.bold());
             headerOnView.setPadding(AndroidUtilities.dp(5.33f), AndroidUtilities.dp(2), AndroidUtilities.dp(5.33f), AndroidUtilities.dp(2));
             headerOnView.setTextSize(AndroidUtilities.dp(12));
             headerOnView.setTextColor(Theme.getColor(Theme.key_windowBackgroundWhiteBlueHeader));

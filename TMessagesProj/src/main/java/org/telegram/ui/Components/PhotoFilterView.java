@@ -13,9 +13,11 @@ import android.content.Context;
 import android.graphics.Bitmap;
 import android.graphics.Canvas;
 import android.graphics.LinearGradient;
+import android.graphics.Matrix;
 import android.graphics.Paint;
 import android.graphics.PorterDuff;
 import android.graphics.PorterDuffColorFilter;
+import android.graphics.Rect;
 import android.graphics.Shader;
 import android.graphics.SurfaceTexture;
 import android.graphics.drawable.Drawable;
@@ -23,7 +25,6 @@ import android.os.Build;
 import android.text.Layout;
 import android.text.StaticLayout;
 import android.text.TextPaint;
-import android.util.Log;
 import android.util.TypedValue;
 import android.view.Gravity;
 import android.view.HapticFeedbackConstants;
@@ -37,7 +38,7 @@ import android.widget.ImageView;
 import android.widget.LinearLayout;
 import android.widget.TextView;
 
-import androidx.annotation.NonNull;
+import androidx.annotation.Nullable;
 import androidx.recyclerview.widget.LinearLayoutManager;
 import androidx.recyclerview.widget.RecyclerView;
 
@@ -52,7 +53,6 @@ import org.telegram.ui.ActionBar.Theme;
 import org.telegram.ui.BubbleActivity;
 import org.telegram.ui.Cells.PhotoEditRadioCell;
 import org.telegram.ui.Cells.PhotoEditToolCell;
-import org.telegram.ui.Stories.recorder.PreviewView;
 import org.telegram.ui.Stories.recorder.StoryRecorder;
 
 import java.nio.ByteBuffer;
@@ -98,6 +98,7 @@ public class PhotoFilterView extends FrameLayout implements FilterShaders.Filter
     private float grainValue; //0 100
     private int blurType; //0 none, 1 radial, 2 linear
     private float sharpenValue; //0 100
+    private boolean filtersEmpty;
     private CurvesToolValue curvesToolValue;
     private float blurExcludeSize;
     private Point blurExcludePoint;
@@ -134,6 +135,10 @@ public class PhotoFilterView extends FrameLayout implements FilterShaders.Filter
     private ImageView curveItem;
 
     private Bitmap bitmapToEdit;
+    private Bitmap bitmapMask;
+    private final Rect maskRect = new Rect();
+    private final Matrix maskMatrix = new Matrix();
+    private final Paint maskPaint = new Paint(Paint.FILTER_BITMAP_FLAG);
     private int orientation;
     private final Theme.ResourcesProvider resourcesProvider;
 
@@ -316,7 +321,11 @@ public class PhotoFilterView extends FrameLayout implements FilterShaders.Filter
         }
     }
 
-    public PhotoFilterView(Context context, VideoEditTextureView videoTextureView, Bitmap bitmap, int rotation, MediaController.SavedFilterState state, PaintingOverlay overlay, int hasFaces, boolean mirror, boolean ownLayout, Theme.ResourcesProvider resourcesProvider) {
+    public PhotoFilterView(Context context, VideoEditTextureView videoTextureView, Bitmap bitmap, int rotation, MediaController.SavedFilterState state, PaintingOverlay overlay, int hasFaces, boolean mirror, boolean ownLayout, BlurringShader.BlurManager blurManager, Theme.ResourcesProvider resourcesProvider) {
+        this(context, videoTextureView, bitmap, null, rotation, state, overlay, hasFaces, mirror, ownLayout, blurManager, resourcesProvider);
+    }
+
+    public PhotoFilterView(Context context, VideoEditTextureView videoTextureView, Bitmap bitmap, Bitmap mask, int rotation, MediaController.SavedFilterState state, PaintingOverlay overlay, int hasFaces, boolean mirror, boolean ownLayout, BlurringShader.BlurManager blurManager, Theme.ResourcesProvider resourcesProvider) {
         super(context);
         this.ownLayout = ownLayout;
         this.resourcesProvider = resourcesProvider;
@@ -372,6 +381,7 @@ public class PhotoFilterView extends FrameLayout implements FilterShaders.Filter
             blurExcludeSize = state.blurExcludeSize;
             blurExcludePoint = state.blurExcludePoint;
             blurExcludeBlurSize = state.blurExcludeBlurSize;
+            filtersEmpty = state.isEmpty();
             blurAngle = state.blurAngle;
             lastState = state;
         } else {
@@ -380,8 +390,10 @@ public class PhotoFilterView extends FrameLayout implements FilterShaders.Filter
             blurExcludePoint = new Point(0.5f, 0.5f);
             blurExcludeBlurSize = 0.15f;
             blurAngle = (float) Math.PI / 2.0f;
+            filtersEmpty = true;
         }
         bitmapToEdit = bitmap;
+        bitmapMask = mask;
         orientation = rotation;
 
         if (videoTextureView != null) {
@@ -392,7 +404,15 @@ public class PhotoFilterView extends FrameLayout implements FilterShaders.Filter
             });
         } else {
             ownsTextureView = true;
-            textureView = new TextureView(context);
+            textureView = new TextureView(context) {
+                @Override
+                public void setTransform(@Nullable Matrix transform) {
+                    super.setTransform(transform);
+                    if (eglThread != null) {
+                        eglThread.updateUiBlurTransform(transform, getWidth(), getHeight());
+                    }
+                }
+            };
             if (ownLayout) {
                 addView(textureView, LayoutHelper.createFrame(LayoutHelper.MATCH_PARENT, LayoutHelper.MATCH_PARENT, Gravity.TOP | Gravity.LEFT));
             }
@@ -401,7 +421,11 @@ public class PhotoFilterView extends FrameLayout implements FilterShaders.Filter
                 @Override
                 public void onSurfaceTextureAvailable(SurfaceTexture surface, int width, int height) {
                     if (eglThread == null && surface != null) {
-                        eglThread = new FilterGLThread(surface, bitmapToEdit, orientation, isMirrored, null, ownLayout);
+                        eglThread = new FilterGLThread(surface, bitmapToEdit, orientation, isMirrored, null, ownLayout, blurManager, width, height);
+                        if (!ownLayout) {
+                            eglThread.updateUiBlurGradient(gradientTop, gradientBottom);
+                            eglThread.updateUiBlurTransform(textureView.getTransform(null), textureView.getWidth(), textureView.getHeight());
+                        }
                         eglThread.setFilterGLThreadDelegate(PhotoFilterView.this);
                         eglThread.setSurfaceTextureSize(width, height);
                         eglThread.requestRender(true, true, false);
@@ -454,6 +478,7 @@ public class PhotoFilterView extends FrameLayout implements FilterShaders.Filter
 
         curvesControl = new PhotoFilterCurvesControl(context, curvesToolValue);
         curvesControl.setDelegate(() -> {
+            updateFiltersEmpty();
             if (eglThread != null) {
                 eglThread.requestRender(false);
             }
@@ -477,17 +502,17 @@ public class PhotoFilterView extends FrameLayout implements FilterShaders.Filter
         cancelTextView.setBackgroundDrawable(Theme.createSelectorDrawable(Theme.ACTION_BAR_PICKER_SELECTOR_COLOR, 0));
         cancelTextView.setPadding(AndroidUtilities.dp(20), 0, AndroidUtilities.dp(20), 0);
         cancelTextView.setText(LocaleController.getString("Cancel", R.string.Cancel).toUpperCase());
-        cancelTextView.setTypeface(AndroidUtilities.getTypeface("fonts/rmedium.ttf"));
+        cancelTextView.setTypeface(AndroidUtilities.bold());
         frameLayout.addView(cancelTextView, LayoutHelper.createFrame(LayoutHelper.WRAP_CONTENT, LayoutHelper.MATCH_PARENT, Gravity.TOP | Gravity.LEFT));
 
         doneTextView = new TextView(context);
         doneTextView.setTextSize(TypedValue.COMPLEX_UNIT_DIP, 14);
-        doneTextView.setTextColor(getThemedColor(Theme.key_dialogFloatingButton));
+        doneTextView.setTextColor(getThemedColor(Theme.key_chat_editMediaButton));
         doneTextView.setGravity(Gravity.CENTER);
         doneTextView.setBackgroundDrawable(Theme.createSelectorDrawable(Theme.ACTION_BAR_PICKER_SELECTOR_COLOR, 0));
         doneTextView.setPadding(AndroidUtilities.dp(20), 0, AndroidUtilities.dp(20), 0);
         doneTextView.setText(LocaleController.getString("Done", R.string.Done).toUpperCase());
-        doneTextView.setTypeface(AndroidUtilities.getTypeface("fonts/rmedium.ttf"));
+        doneTextView.setTypeface(AndroidUtilities.bold());
         frameLayout.addView(doneTextView, LayoutHelper.createFrame(LayoutHelper.WRAP_CONTENT, LayoutHelper.MATCH_PARENT, Gravity.TOP | Gravity.RIGHT));
 
         LinearLayout linearLayout = new LinearLayout(context);
@@ -496,12 +521,12 @@ public class PhotoFilterView extends FrameLayout implements FilterShaders.Filter
         tuneItem = new ImageView(context);
         tuneItem.setScaleType(ImageView.ScaleType.CENTER);
         tuneItem.setImageResource(R.drawable.msg_photo_settings);
-        tuneItem.setColorFilter(new PorterDuffColorFilter(getThemedColor(Theme.key_dialogFloatingButton), PorterDuff.Mode.MULTIPLY));
+        tuneItem.setColorFilter(new PorterDuffColorFilter(getThemedColor(Theme.key_chat_editMediaButton), PorterDuff.Mode.MULTIPLY));
         tuneItem.setBackgroundDrawable(Theme.createSelectorDrawable(Theme.ACTION_BAR_WHITE_SELECTOR_COLOR));
         linearLayout.addView(tuneItem, LayoutHelper.createLinear(56, 48));
         tuneItem.setOnClickListener(v -> {
             selectedTool = 0;
-            tuneItem.setColorFilter(new PorterDuffColorFilter(getThemedColor(Theme.key_dialogFloatingButton), PorterDuff.Mode.MULTIPLY));
+            tuneItem.setColorFilter(new PorterDuffColorFilter(getThemedColor(Theme.key_chat_editMediaButton), PorterDuff.Mode.MULTIPLY));
             blurItem.setColorFilter(null);
             curveItem.setColorFilter(null);
             switchMode();
@@ -515,7 +540,7 @@ public class PhotoFilterView extends FrameLayout implements FilterShaders.Filter
         blurItem.setOnClickListener(v -> {
             selectedTool = 1;
             tuneItem.setColorFilter(null);
-            blurItem.setColorFilter(new PorterDuffColorFilter(getThemedColor(Theme.key_dialogFloatingButton), PorterDuff.Mode.MULTIPLY));
+            blurItem.setColorFilter(new PorterDuffColorFilter(getThemedColor(Theme.key_chat_editMediaButton), PorterDuff.Mode.MULTIPLY));
             curveItem.setColorFilter(null);
             switchMode();
         });
@@ -532,7 +557,7 @@ public class PhotoFilterView extends FrameLayout implements FilterShaders.Filter
             selectedTool = 2;
             tuneItem.setColorFilter(null);
             blurItem.setColorFilter(null);
-            curveItem.setColorFilter(new PorterDuffColorFilter(getThemedColor(Theme.key_dialogFloatingButton), PorterDuff.Mode.MULTIPLY));
+            curveItem.setColorFilter(new PorterDuffColorFilter(getThemedColor(Theme.key_chat_editMediaButton), PorterDuff.Mode.MULTIPLY));
             switchMode();
         });
 
@@ -661,16 +686,16 @@ public class PhotoFilterView extends FrameLayout implements FilterShaders.Filter
 
     public void updateColors() {
         if (doneTextView != null) {
-            doneTextView.setTextColor(getThemedColor(Theme.key_dialogFloatingButton));
+            doneTextView.setTextColor(getThemedColor(Theme.key_chat_editMediaButton));
         }
         if (tuneItem != null && tuneItem.getColorFilter() != null) {
-            tuneItem.setColorFilter(new PorterDuffColorFilter(getThemedColor(Theme.key_dialogFloatingButton), PorterDuff.Mode.MULTIPLY));
+            tuneItem.setColorFilter(new PorterDuffColorFilter(getThemedColor(Theme.key_chat_editMediaButton), PorterDuff.Mode.MULTIPLY));
         }
         if (blurItem != null && blurItem.getColorFilter() != null) {
-            blurItem.setColorFilter(new PorterDuffColorFilter(getThemedColor(Theme.key_dialogFloatingButton), PorterDuff.Mode.MULTIPLY));
+            blurItem.setColorFilter(new PorterDuffColorFilter(getThemedColor(Theme.key_chat_editMediaButton), PorterDuff.Mode.MULTIPLY));
         }
         if (curveItem != null && curveItem.getColorFilter() != null) {
-            curveItem.setColorFilter(new PorterDuffColorFilter(getThemedColor(Theme.key_dialogFloatingButton), PorterDuff.Mode.MULTIPLY));
+            curveItem.setColorFilter(new PorterDuffColorFilter(getThemedColor(Theme.key_chat_editMediaButton), PorterDuff.Mode.MULTIPLY));
         }
         updateSelectedBlurType();
     }
@@ -678,9 +703,9 @@ public class PhotoFilterView extends FrameLayout implements FilterShaders.Filter
     private void updateSelectedBlurType() {
         if (blurType == 0) {
             Drawable drawable = blurOffButton.getContext().getResources().getDrawable(R.drawable.msg_blur_off).mutate();
-            drawable.setColorFilter(new PorterDuffColorFilter(getThemedColor(Theme.key_dialogFloatingButton), PorterDuff.Mode.MULTIPLY));
+            drawable.setColorFilter(new PorterDuffColorFilter(getThemedColor(Theme.key_chat_editMediaButton), PorterDuff.Mode.MULTIPLY));
             blurOffButton.setCompoundDrawablesWithIntrinsicBounds(null, drawable, null, null);
-            blurOffButton.setTextColor(getThemedColor(Theme.key_dialogFloatingButton));
+            blurOffButton.setTextColor(getThemedColor(Theme.key_chat_editMediaButton));
 
             blurRadialButton.setCompoundDrawablesWithIntrinsicBounds(0, R.drawable.msg_blur_radial, 0, 0);
             blurRadialButton.setTextColor(0xffffffff);
@@ -692,9 +717,9 @@ public class PhotoFilterView extends FrameLayout implements FilterShaders.Filter
             blurOffButton.setTextColor(0xffffffff);
 
             Drawable drawable = blurOffButton.getContext().getResources().getDrawable(R.drawable.msg_blur_radial).mutate();
-            drawable.setColorFilter(new PorterDuffColorFilter(getThemedColor(Theme.key_dialogFloatingButton), PorterDuff.Mode.MULTIPLY));
+            drawable.setColorFilter(new PorterDuffColorFilter(getThemedColor(Theme.key_chat_editMediaButton), PorterDuff.Mode.MULTIPLY));
             blurRadialButton.setCompoundDrawablesWithIntrinsicBounds(null, drawable, null, null);
-            blurRadialButton.setTextColor(getThemedColor(Theme.key_dialogFloatingButton));
+            blurRadialButton.setTextColor(getThemedColor(Theme.key_chat_editMediaButton));
 
             blurLinearButton.setCompoundDrawablesWithIntrinsicBounds(0, R.drawable.msg_blur_linear, 0, 0);
             blurLinearButton.setTextColor(0xffffffff);
@@ -706,10 +731,11 @@ public class PhotoFilterView extends FrameLayout implements FilterShaders.Filter
             blurRadialButton.setTextColor(0xffffffff);
 
             Drawable drawable = blurOffButton.getContext().getResources().getDrawable(R.drawable.msg_blur_linear).mutate();
-            drawable.setColorFilter(new PorterDuffColorFilter(getThemedColor(Theme.key_dialogFloatingButton), PorterDuff.Mode.MULTIPLY));
+            drawable.setColorFilter(new PorterDuffColorFilter(getThemedColor(Theme.key_chat_editMediaButton), PorterDuff.Mode.MULTIPLY));
             blurLinearButton.setCompoundDrawablesWithIntrinsicBounds(null, drawable, null, null);
-            blurLinearButton.setTextColor(getThemedColor(Theme.key_dialogFloatingButton));
+            blurLinearButton.setTextColor(getThemedColor(Theme.key_chat_editMediaButton));
         }
+        updateFiltersEmpty();
     }
 
     public MediaController.SavedFilterState getSavedFilterState() {
@@ -832,6 +858,26 @@ public class PhotoFilterView extends FrameLayout implements FilterShaders.Filter
         if (eglThread != null) {
             eglThread.requestRender(false);
         }
+    }
+
+    private void updateFiltersEmpty() {
+        filtersEmpty =
+            Math.abs(enhanceValue) < 0.1f &&
+            Math.abs(softenSkinValue) < 0.1f &&
+            Math.abs(exposureValue) < 0.1f &&
+            Math.abs(contrastValue) < 0.1f &&
+            Math.abs(warmthValue) < 0.1f &&
+            Math.abs(saturationValue) < 0.1f &&
+            Math.abs(fadeValue) < 0.1f &&
+            tintShadowsColor == 0 &&
+            tintHighlightsColor == 0 &&
+            Math.abs(highlightsValue) < 0.1f &&
+            Math.abs(shadowsValue) < 0.1f &&
+            Math.abs(vignetteValue) < 0.1f &&
+            Math.abs(grainValue) < 0.1f &&
+            blurType == 0 &&
+            Math.abs(sharpenValue) < 0.1f &&
+            curvesToolValue.shouldBeSkipped();
     }
 
     public void switchMode() {
@@ -971,6 +1017,19 @@ public class PhotoFilterView extends FrameLayout implements FilterShaders.Filter
         if (paintingOverlay != null && child == textureView) {
             canvas.save();
             canvas.translate(textureView.getLeft(), textureView.getTop());
+            if (bitmapMask != null && textureView.getVisibility() == View.VISIBLE) {
+                maskRect.set(0, 0, textureView.getMeasuredWidth(), textureView.getMeasuredHeight());
+                if (orientation != 0) {
+                    maskMatrix.reset();
+                    maskMatrix.postRotate(orientation, bitmapMask.getWidth() / 2f, bitmapMask.getHeight() / 2f);
+                    float dxy = (bitmapMask.getHeight() - bitmapMask.getWidth()) / 2f;
+                    maskMatrix.postTranslate(dxy, -dxy);
+                    maskMatrix.postScale(maskRect.width() / (float) bitmapMask.getHeight(), maskRect.height() / (float) bitmapMask.getWidth());
+                    canvas.drawBitmap(bitmapMask, maskMatrix, maskPaint);
+                } else {
+                    canvas.drawBitmap(bitmapMask, null, maskRect, maskPaint);
+                }
+            }
             float scale = textureView.getMeasuredWidth() / (float) paintingOverlay.getMeasuredWidth();
             canvas.scale(scale, scale);
             paintingOverlay.draw(canvas);
@@ -1098,7 +1157,7 @@ public class PhotoFilterView extends FrameLayout implements FilterShaders.Filter
 
     @Override
     public boolean shouldShowOriginal() {
-        return showOriginal;
+        return showOriginal || filtersEmpty;
     }
 
     @Override
@@ -1138,6 +1197,7 @@ public class PhotoFilterView extends FrameLayout implements FilterShaders.Filter
 
     public void setEnhanceValue(float value) {
         enhanceValue = value * 100f;
+        updateFiltersEmpty();
         for (int i = 0; i < recyclerListView.getChildCount(); ++i) {
             View child = recyclerListView.getChildAt(i);
             if (child instanceof PhotoEditToolCell && recyclerListView.getChildAdapterPosition(child) == enhanceTool) {
@@ -1203,6 +1263,7 @@ public class PhotoFilterView extends FrameLayout implements FilterShaders.Filter
                     if (eglThread != null) {
                         eglThread.requestRender(true);
                     }
+                    updateFiltersEmpty();
                 });
             } else {
                 view = new PhotoEditRadioCell(mContext);
@@ -1217,6 +1278,7 @@ public class PhotoFilterView extends FrameLayout implements FilterShaders.Filter
                     if (eglThread != null) {
                         eglThread.requestRender(false);
                     }
+                    updateFiltersEmpty();
                 });
             }
             return new RecyclerListView.Holder(view);
@@ -1399,9 +1461,7 @@ public class PhotoFilterView extends FrameLayout implements FilterShaders.Filter
                             } catch (Exception ignore) {}
                             lastVibrateValue = newValue;
                         } else if (Math.abs(newValueInt - lastVibrateValueInt) > (SharedConfig.getDevicePerformanceClass() == SharedConfig.PERFORMANCE_CLASS_HIGH ? 5 : 10)) {
-                            try {
-                                performHapticFeedback(HapticFeedbackConstants.TEXT_HANDLE_MOVE, HapticFeedbackConstants.FLAG_IGNORE_VIEW_SETTING);
-                            } catch (Exception ignore) {}
+                            AndroidUtilities.vibrateCursor(this);
                             lastVibrateValue = newValue;
                         }
                         filterView.setEnhanceValue(newValue);
@@ -1447,6 +1507,23 @@ public class PhotoFilterView extends FrameLayout implements FilterShaders.Filter
 
                 canvas.restore();
             }
+        }
+    }
+
+    public Bitmap getUiBlurBitmap() {
+        if (eglThread == null) {
+            return null;
+        }
+        return eglThread.getUiBlurBitmap();
+    }
+
+    private int gradientTop, gradientBottom;
+    public void updateUiBlurGradient(int top, int bottom) {
+        if (eglThread != null) {
+            eglThread.updateUiBlurGradient(top, bottom);
+        } else {
+            gradientTop = top;
+            gradientBottom = bottom;
         }
     }
 }

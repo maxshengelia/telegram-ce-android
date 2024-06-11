@@ -231,7 +231,7 @@ public class TranslateAlert2 extends BottomSheet implements NotificationCenter.N
         buttonTextView.setEllipsize(TextUtils.TruncateAt.END);
         buttonTextView.setGravity(Gravity.CENTER);
         buttonTextView.setTextColor(Theme.getColor(Theme.key_featuredStickers_buttonText));
-        buttonTextView.setTypeface(AndroidUtilities.getTypeface("fonts/rmedium.ttf"));
+        buttonTextView.setTypeface(AndroidUtilities.bold());
         buttonTextView.setTextSize(TypedValue.COMPLEX_UNIT_DIP, 14);
         buttonTextView.setText(LocaleController.getString("CloseTranslation", R.string.CloseTranslation));
         buttonTextView.setBackground(Theme.AdaptiveRipple.filledRect(Theme.getColor(Theme.key_featuredStickers_addButton), 6));
@@ -337,10 +337,13 @@ public class TranslateAlert2 extends BottomSheet implements NotificationCenter.N
                     newEntity.length = entity.length;
                     received.entities.set(i, newEntity);
                 }
+            } else if (entity instanceof TLRPC.TL_messageEntityPre) {
+                if (source != null && source.entities != null && i < source.entities.size() && source.entities.get(i) instanceof TLRPC.TL_messageEntityPre) {
+                    entity.language = source.entities.get(i).language;
+                }
             }
         }
         if (source != null && source.text != null && !source.entities.isEmpty()) {
-
             HashMap<String, ArrayList<Emoji.EmojiSpanRange>> srcIndexes = groupEmojiRanges(source.text);
             HashMap<String, ArrayList<Emoji.EmojiSpanRange>> destIndexes = groupEmojiRanges(received.text);
 
@@ -684,7 +687,7 @@ public class TranslateAlert2 extends BottomSheet implements NotificationCenter.N
             };
             titleTextView.setTextColor(getThemedColor(Theme.key_dialogTextBlack));
             titleTextView.setTextSize(TypedValue.COMPLEX_UNIT_DIP, 20);
-            titleTextView.setTypeface(AndroidUtilities.getTypeface("fonts/rmedium.ttf"));
+            titleTextView.setTypeface(AndroidUtilities.bold());
             titleTextView.setText(LocaleController.getString("AutomaticTranslation", R.string.AutomaticTranslation));
             titleTextView.setPivotX(0);
             titleTextView.setPivotY(0);

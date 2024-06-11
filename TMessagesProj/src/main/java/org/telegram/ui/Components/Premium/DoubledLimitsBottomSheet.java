@@ -67,7 +67,7 @@ public class DoubledLimitsBottomSheet extends BottomSheetWithRecyclerListView im
         titleView.setGravity(Gravity.CENTER);
         titleView.setTextSize(TypedValue.COMPLEX_UNIT_DIP, 20);
         titleView.setTextColor(Theme.getColor(Theme.key_windowBackgroundWhiteBlackText, resourcesProvider));
-        titleView.setTypeface(AndroidUtilities.getTypeface("fonts/rmedium.ttf"));
+        titleView.setTypeface(AndroidUtilities.bold());
         titleLayout.addView(titleView, LayoutHelper.createFrame(LayoutHelper.WRAP_CONTENT, LayoutHelper.WRAP_CONTENT, Gravity.CENTER_VERTICAL));
 
         titleImage = new ImageView(getContext());
@@ -85,7 +85,7 @@ public class DoubledLimitsBottomSheet extends BottomSheetWithRecyclerListView im
         divider.setBackgroundColor(Theme.getColor(Theme.key_dialogBackground, resourcesProvider));
         containerView.addView(divider, LayoutHelper.createFrame(LayoutHelper.MATCH_PARENT, 72, Gravity.BOTTOM, 0, 0, 0, 0));
 
-        premiumButtonView = new PremiumButtonView(getContext(), true);
+        premiumButtonView = new PremiumButtonView(getContext(), true, resourcesProvider);
         premiumButtonView.buttonTextView.setText(PremiumPreviewFragment.getPremiumButtonText(currentAccount, selectedTier));
 
         containerView.addView(premiumButtonView, LayoutHelper.createFrame(LayoutHelper.MATCH_PARENT, 48, Gravity.BOTTOM, 16, 0, 16, 12));
@@ -155,7 +155,7 @@ public class DoubledLimitsBottomSheet extends BottomSheetWithRecyclerListView im
     }
 
     @Override
-    protected RecyclerListView.SelectionAdapter createAdapter() {
+    protected RecyclerListView.SelectionAdapter createAdapter(RecyclerListView listView) {
         adapter = new Adapter(currentAccount, false, resourcesProvider);
         adapter.containerView = containerView;
         return adapter;
@@ -206,7 +206,7 @@ public class DoubledLimitsBottomSheet extends BottomSheetWithRecyclerListView im
 
             title = new TextView(context);
             title.setTextSize(TypedValue.COMPLEX_UNIT_DIP, 15);
-            title.setTypeface(AndroidUtilities.getTypeface("fonts/rmedium.ttf"));
+            title.setTypeface(AndroidUtilities.bold());
             title.setTextColor(Theme.getColor(Theme.key_windowBackgroundWhiteBlackText, resourcesProvider));
             addView(title, LayoutHelper.createLinear(LayoutHelper.MATCH_PARENT, LayoutHelper.WRAP_CONTENT, 0, 0, 16, 0, 16, 0));
 
@@ -324,6 +324,11 @@ public class DoubledLimitsBottomSheet extends BottomSheetWithRecyclerListView im
                     LocaleController.formatString("ConnectedAccountsLimitSubtitle", R.string.ConnectedAccountsLimitSubtitle, 4),
                     UserConfig.MAX_ACCOUNT_DEFAULT_COUNT, UserConfig.MAX_ACCOUNT_COUNT
             ));
+            limits.add(new Limit(
+                    LocaleController.getString(R.string.SimilarChannelsLimitTitle),
+                    LocaleController.formatString(R.string.SimilarChannelsLimitSubtitle, messagesController.recommendedChannelsLimitPremium),
+                    messagesController.recommendedChannelsLimitDefault, messagesController.recommendedChannelsLimitPremium
+            ));
 
             rowCount = 0;
             headerRow = rowCount++;
@@ -370,7 +375,7 @@ public class DoubledLimitsBottomSheet extends BottomSheetWithRecyclerListView im
                         titleView.setGravity(Gravity.CENTER);
                         titleView.setTextSize(TypedValue.COMPLEX_UNIT_DIP, 20);
                         titleView.setTextColor(Theme.getColor(Theme.key_windowBackgroundWhiteBlackText, resourcesProvider));
-                        titleView.setTypeface(AndroidUtilities.getTypeface("fonts/rmedium.ttf"));
+                        titleView.setTypeface(AndroidUtilities.bold());
                         linearLayout.addView(titleView, LayoutHelper.createFrame(LayoutHelper.WRAP_CONTENT, LayoutHelper.WRAP_CONTENT, Gravity.CENTER_VERTICAL));
 
 

@@ -3,6 +3,7 @@ package org.telegram.ui.Components.Paint.Views;
 import android.content.Context;
 import android.graphics.Canvas;
 import android.graphics.RectF;
+import android.util.Log;
 import android.view.ViewGroup;
 import android.widget.FrameLayout;
 
@@ -173,7 +174,7 @@ public class StickerView extends EntityView {
     }
 
     @Override
-    protected Rect getSelectionBounds() {
+    public Rect getSelectionBounds() {
         ViewGroup parentView = (ViewGroup) getParent();
         if (parentView == null) {
             return new Rect();

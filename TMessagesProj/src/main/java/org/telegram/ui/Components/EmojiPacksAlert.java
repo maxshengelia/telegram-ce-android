@@ -416,7 +416,7 @@ public class EmojiPacksAlert extends BottomSheet implements NotificationCenter.N
                 copyButton.setPadding(AndroidUtilities.dp(26), 0, AndroidUtilities.dp(26), 0);
                 copyButton.setText(LocaleController.getString("Copy", R.string.Copy));
                 copyButton.getTextView().setTextSize(TypedValue.COMPLEX_UNIT_DIP, 14.4f);
-                copyButton.getTextView().setTypeface(AndroidUtilities.getTypeface("fonts/rmedium.ttf"));
+                copyButton.getTextView().setTypeface(AndroidUtilities.bold());
                 copyButton.setOnClickListener(e -> {
                     if (popupWindow == null) {
                         return;
@@ -501,7 +501,7 @@ public class EmojiPacksAlert extends BottomSheet implements NotificationCenter.N
         addButtonView.setVisibility(View.GONE);
         addButtonView.setBackground(Theme.AdaptiveRipple.filledRect(getThemedColor(Theme.key_featuredStickers_addButton), 6));
         addButtonView.setTextColor(getThemedColor(Theme.key_featuredStickers_buttonText));
-        addButtonView.setTypeface(AndroidUtilities.getTypeface("fonts/rmedium.ttf"));
+        addButtonView.setTypeface(AndroidUtilities.bold());
         addButtonView.setGravity(Gravity.CENTER);
         buttonsView.addView(addButtonView, LayoutHelper.createFrame(LayoutHelper.MATCH_PARENT, 48, Gravity.BOTTOM, 12, 10, 12, 10));
 
@@ -509,12 +509,12 @@ public class EmojiPacksAlert extends BottomSheet implements NotificationCenter.N
         removeButtonView.setVisibility(View.GONE);
         removeButtonView.setBackground(Theme.createRadSelectorDrawable(0x0fffffff & getThemedColor(Theme.key_text_RedBold), 0, 0));
         removeButtonView.setTextColor(getThemedColor(Theme.key_text_RedBold));
-        removeButtonView.setTypeface(AndroidUtilities.getTypeface("fonts/rmedium.ttf"));
+        removeButtonView.setTypeface(AndroidUtilities.bold());
         removeButtonView.setGravity(Gravity.CENTER);
         removeButtonView.setClickable(true);
         buttonsView.addView(removeButtonView, LayoutHelper.createFrame(LayoutHelper.MATCH_PARENT, LayoutHelper.MATCH_PARENT, Gravity.BOTTOM, 0, 0, 0, 19));
 
-        premiumButtonView = new PremiumButtonView(context, false);
+        premiumButtonView = new PremiumButtonView(context, false, resourcesProvider);
         premiumButtonView.setButton(LocaleController.getString("UnlockPremiumEmoji", R.string.UnlockPremiumEmoji), ev -> {
             showPremiumAlert();
         });
@@ -639,7 +639,7 @@ public class EmojiPacksAlert extends BottomSheet implements NotificationCenter.N
                         if (drawable == null) {
                             continue;
                         }
-                        drawable.setColorFilter(Theme.getAnimatedEmojiColorFilter(resourcesProvider));
+                        drawable.setColorFilter(getAdaptiveEmojiColorFilter(getThemedColor(Theme.key_windowBackgroundWhiteBlackText)));
 //                            drawable.addView(this);
                         ArrayList<EmojiImageView> arrayList = viewsGroupedByLines.get(child.getTop());
                         if (arrayList == null) {
@@ -773,7 +773,7 @@ public class EmojiPacksAlert extends BottomSheet implements NotificationCenter.N
                     drawable.setAlpha(255);
                     AndroidUtilities.rectTmp2.set(imageView.getLeft() + imageView.getPaddingLeft(),  imageView.getPaddingTop(), imageView.getRight() - imageView.getPaddingRight(), imageView.getMeasuredHeight() - imageView.getPaddingBottom());
                     imageView.backgroundThreadDrawHolder[threadIndex].setBounds(AndroidUtilities.rectTmp2);
-                    drawable.setColorFilter(Theme.getAnimatedEmojiColorFilter(resourcesProvider));
+                    drawable.setColorFilter(getAdaptiveEmojiColorFilter(getThemedColor(Theme.key_windowBackgroundWhiteBlackText)));
                     imageView.imageReceiver = drawable.getImageReceiver();;
                     drawInBackgroundViews.add(imageView);
                 }
@@ -994,18 +994,18 @@ public class EmojiPacksAlert extends BottomSheet implements NotificationCenter.N
         }));
     }
 
-    public static void uninstallSet(BaseFragment fragment, TLRPC.TL_messages_stickerSet set, boolean showBulletin, Runnable onUndo) {
+    public static void uninstallSet(BaseFragment fragment, TLRPC.TL_messages_stickerSet set, boolean showBulletin, Runnable onUndo, boolean forget) {
         if (fragment == null || set == null || fragment.getFragmentView() == null) {
             return;
         }
-        MediaDataController.getInstance(fragment.getCurrentAccount()).toggleStickerSet(fragment.getFragmentView().getContext(), set, 0, fragment, true, showBulletin, onUndo);
+        MediaDataController.getInstance(fragment.getCurrentAccount()).toggleStickerSet(fragment.getFragmentView().getContext(), set, 0, fragment, true, showBulletin, onUndo, forget);
     }
 
     public static void uninstallSet(Context context, TLRPC.TL_messages_stickerSet set, boolean showBulletin, Runnable onUndo) {
         if (set == null) {
             return;
         }
-        MediaDataController.getInstance(UserConfig.selectedAccount).toggleStickerSet(context, set, 0, null, true, showBulletin, onUndo);
+        MediaDataController.getInstance(UserConfig.selectedAccount).toggleStickerSet(context, set, 0, null, true, showBulletin, onUndo, true);
     }
 
     private ValueAnimator loadAnimator;
@@ -1140,7 +1140,7 @@ public class EmojiPacksAlert extends BottomSheet implements NotificationCenter.N
                 removeButtonView.setOnClickListener(ev -> {
                     dismiss();
                     if (fragment != null) {
-                        MediaDataController.getInstance(fragment.getCurrentAccount()).removeMultipleStickerSets(fragment.getFragmentView().getContext(), fragment, installedPacks);
+                        MediaDataController.getInstance(fragment.getCurrentAccount()).removeMultipleStickerSets(fragment.getContext(), fragment, installedPacks);
                     } else {
                         for (int i = 0; i < installedPacks.size(); ++i) {
                             TLRPC.TL_messages_stickerSet stickerSet = installedPacks.get(i);
@@ -1560,7 +1560,7 @@ public class EmojiPacksAlert extends BottomSheet implements NotificationCenter.N
             float endMarginDp = 8;
             if (!single) {
                 if (!UserConfig.getInstance(currentAccount).isPremium()) {
-                    unlockButtonView = new PremiumButtonView(context, AndroidUtilities.dp(4), false);
+                    unlockButtonView = new PremiumButtonView(context, AndroidUtilities.dp(4), false, resourcesProvider);
                     unlockButtonView.setButton(LocaleController.getString("Unlock", R.string.Unlock), ev -> {
                         premiumButtonClicked = SystemClock.elapsedRealtime();
                         showPremiumAlert();
@@ -1582,7 +1582,7 @@ public class EmojiPacksAlert extends BottomSheet implements NotificationCenter.N
                 }
 
                 addButtonView = new TextView(context);
-                addButtonView.setTypeface(AndroidUtilities.getTypeface("fonts/rmedium.ttf"));
+                addButtonView.setTypeface(AndroidUtilities.bold());
                 addButtonView.setTextColor(getThemedColor(Theme.key_featuredStickers_buttonText));
                 addButtonView.setBackground(Theme.AdaptiveRipple.filledRect(getThemedColor(Theme.key_featuredStickers_addButton), 4));
                 addButtonView.setText(LocaleController.getString("Add", R.string.Add));
@@ -1598,7 +1598,7 @@ public class EmojiPacksAlert extends BottomSheet implements NotificationCenter.N
                 endMarginDp = Math.max(endMarginDp, (addButtonView.getMeasuredWidth() + AndroidUtilities.dp(8 + 8)) / AndroidUtilities.density);
 
                 removeButtonView = new TextView(context);
-                removeButtonView.setTypeface(AndroidUtilities.getTypeface("fonts/rmedium.ttf"));
+                removeButtonView.setTypeface(AndroidUtilities.bold());
                 removeButtonView.setTextColor(getThemedColor(Theme.key_featuredStickers_addButton));
                 removeButtonView.setBackground(Theme.createRadSelectorDrawable(0x0fffffff & getThemedColor(Theme.key_featuredStickers_addButton), 4, 4));
                 removeButtonView.setText(LocaleController.getString("StickersRemove", R.string.StickersRemove));
@@ -1607,7 +1607,7 @@ public class EmojiPacksAlert extends BottomSheet implements NotificationCenter.N
                 removeButtonView.setOnClickListener(e -> {
                     uninstallSet(dummyFragment, set, true, () -> {
                         toggle(true, true);
-                    });
+                    }, true);
                     toggle(false, true);
                 });
                 removeButtonView.setClickable(false);
@@ -1625,7 +1625,7 @@ public class EmojiPacksAlert extends BottomSheet implements NotificationCenter.N
 
             titleView = new LinkSpanDrawable.LinksTextView(context, resourcesProvider);
             titleView.setPadding(AndroidUtilities.dp(2), 0, AndroidUtilities.dp(2), 0);
-            titleView.setTypeface(AndroidUtilities.getTypeface("fonts/rmedium.ttf"));
+            titleView.setTypeface(AndroidUtilities.bold());
             titleView.setEllipsize(TextUtils.TruncateAt.END);
             titleView.setSingleLine(true);
             titleView.setLines(1);
@@ -2042,5 +2042,14 @@ public class EmojiPacksAlert extends BottomSheet implements NotificationCenter.N
             }
             return null;
         }
+    }
+
+    private ColorFilter adaptiveEmojiColorFilter;
+    private int adaptiveEmojiColor;
+    private ColorFilter getAdaptiveEmojiColorFilter(int color) {
+        if (color != adaptiveEmojiColor || adaptiveEmojiColorFilter == null) {
+            adaptiveEmojiColorFilter = new PorterDuffColorFilter(adaptiveEmojiColor = color, PorterDuff.Mode.SRC_IN);
+        }
+        return adaptiveEmojiColorFilter;
     }
 }

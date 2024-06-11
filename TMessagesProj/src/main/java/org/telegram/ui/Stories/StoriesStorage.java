@@ -1,8 +1,6 @@
 package org.telegram.ui.Stories;
 
-import android.os.Build;
 import android.text.TextUtils;
-import android.util.Log;
 
 import androidx.collection.LongSparseArray;
 
@@ -14,24 +12,21 @@ import org.telegram.SQLite.SQLiteException;
 import org.telegram.SQLite.SQLitePreparedStatement;
 import org.telegram.messenger.AndroidUtilities;
 import org.telegram.messenger.BuildVars;
+import org.telegram.messenger.DialogObject;
 import org.telegram.messenger.FileLog;
-import org.telegram.messenger.MessageCustomParamsHelper;
 import org.telegram.messenger.MessageObject;
 import org.telegram.messenger.MessagesController;
 import org.telegram.messenger.MessagesStorage;
 import org.telegram.messenger.UserConfig;
-import org.telegram.messenger.Utilities;
 import org.telegram.messenger.support.LongSparseIntArray;
 import org.telegram.tgnet.ConnectionsManager;
 import org.telegram.tgnet.NativeByteBuffer;
-import org.telegram.tgnet.RequestDelegate;
-import org.telegram.tgnet.TLObject;
 import org.telegram.tgnet.TLRPC;
+import org.telegram.tgnet.tl.TL_stories;
 
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.Comparator;
-import java.util.HashSet;
 import java.util.List;
 import java.util.Locale;
 
@@ -47,13 +42,14 @@ public class StoriesStorage {
 
     }
 
-    public void getAllStories(Consumer<TLRPC.TL_stories_allStories> consumer) {
+    public void getAllStories(Consumer<TL_stories.TL_stories_allStories> consumer) {
         storage.getStorageQueue().postRunnable(() -> {
             SQLiteDatabase database = storage.getDatabase();
             SQLiteCursor cursor = null;
-            ArrayList<TLRPC.TL_userStories> userStoriesArray = new ArrayList<>();
+            ArrayList<TL_stories.PeerStories> userStoriesArray = new ArrayList<>();
             ArrayList<Long> usersToLoad = new ArrayList<>();
             ArrayList<Long> chatsToLoad = new ArrayList<>();
+            final int now = ConnectionsManager.getInstance(currentAccount).getCurrentTime();
             boolean failed = false;
             try {
                 cursor = database.queryFinalized("SELECT dialog_id, max_read FROM stories_counter");
@@ -75,18 +71,27 @@ public class StoriesStorage {
                 for (int i = 0; i < dialogsCounter.size(); i++) {
                     long dialogId = dialogsCounter.keyAt(i);
                     int maxReadId = dialogsCounter.valueAt(i);
-                    cursor = database.queryFinalized(String.format(Locale.US, "SELECT data, local_path, local_thumb_path, custom_params FROM stories WHERE dialog_id = %d", dialogId));
-                    ArrayList<TLRPC.StoryItem> storyItems = new ArrayList<>();
+                    cursor = database.queryFinalized(String.format(Locale.US, "SELECT data, custom_params FROM stories WHERE dialog_id = %d", dialogId));
+                    ArrayList<TL_stories.StoryItem> storyItems = new ArrayList<>();
                     while (cursor.next()) {
                         NativeByteBuffer data = cursor.byteBufferValue(0);
-                        String path = cursor.stringValue(1);
-                        String firstFramePath = cursor.stringValue(2);
-                        NativeByteBuffer customData = cursor.byteBufferValue(3);
+                        NativeByteBuffer customData = cursor.byteBufferValue(1);
                         if (data != null) {
-                            TLRPC.StoryItem storyItem = TLRPC.StoryItem.TLdeserialize(data, data.readInt32(true), true);
+                            TL_stories.StoryItem storyItem = TL_stories.StoryItem.TLdeserialize(data, data.readInt32(true), true);
                             storyItem.dialogId = dialogId;
-                            storyItem.attachPath = path;
-                            storyItem.firstFramePath = firstFramePath;
+                            if (storyItem.fwd_from != null && storyItem.fwd_from.from != null) {
+                                MessagesStorage.addLoadPeerInfo(storyItem.fwd_from.from, usersToLoad, chatsToLoad);
+                            }
+                            for (int j = 0; j < storyItem.media_areas.size(); ++j) {
+                                if (storyItem.media_areas.get(j) instanceof TL_stories.TL_mediaAreaChannelPost) {
+                                    long channel_id = ((TL_stories.TL_mediaAreaChannelPost) storyItem.media_areas.get(j)).channel_id;
+                                    if (!chatsToLoad.contains(channel_id))
+                                        chatsToLoad.add(channel_id);
+                                }
+                            }
+                            if (storyItem.from_id != null) {
+                                MessagesStorage.addLoadPeerInfo(storyItem.from_id, usersToLoad, chatsToLoad);
+                            }
                             StoryCustomParamsHelper.readLocalParams(storyItem, customData);
                             storyItems.add(storyItem);
                             data.reuse();
@@ -97,11 +102,11 @@ public class StoriesStorage {
                     }
                     cursor.dispose();
                     cursor = null;
-                    TLRPC.TL_userStories userStories;
-                    userStories = new TLRPC.TL_userStories();
+                    TL_stories.PeerStories userStories;
+                    userStories = new TL_stories.TL_peerStories();
                     userStories.stories = storyItems;
                     userStories.max_read_id = maxReadId;
-                    userStories.user_id = dialogId;
+                    userStories.peer = MessagesController.getInstance(currentAccount).getPeer(dialogId);
                     userStoriesArray.add(userStories);
                 }
             } catch (Throwable e) {
@@ -116,32 +121,34 @@ public class StoriesStorage {
                 AndroidUtilities.runOnUIThread(() -> consumer.accept(null));
                 return;
             }
-            TLRPC.TL_stories_allStories storiesResponse = new TLRPC.TL_stories_allStories();
-            storiesResponse.user_stories = userStoriesArray;
+            TL_stories.TL_stories_allStories storiesResponse = new TL_stories.TL_stories_allStories();
+            storiesResponse.peer_stories = userStoriesArray;
             storiesResponse.users = storage.getUsers(usersToLoad);
-            for (int i = 0; i < storiesResponse.user_stories.size(); i++) {
-                TLRPC.TL_userStories userStories = storiesResponse.user_stories.get(i);
-                checkExpiredStories(userStories.user_id, userStories.stories);
+            storiesResponse.chats = storage.getChats(chatsToLoad);
+            for (int i = 0; i < storiesResponse.peer_stories.size(); i++) {
+                TL_stories.PeerStories userStories = storiesResponse.peer_stories.get(i);
+                long dialogId = DialogObject.getPeerDialogId(userStories.peer);
+                checkExpiredStories(dialogId, userStories.stories);
                 if (userStories.stories.isEmpty()) {
-                    storiesResponse.user_stories.remove(i);
+                    storiesResponse.peer_stories.remove(i);
                     i--;
                 }
 
                 Collections.sort(userStories.stories, StoriesController.storiesComparator);
             }
-            Collections.sort(storiesResponse.user_stories, Comparator.comparingInt(o -> -o.stories.get(o.stories.size() - 1).date));
+            Collections.sort(storiesResponse.peer_stories, Comparator.comparingInt(o -> -o.stories.get(o.stories.size() - 1).date));
 
             AndroidUtilities.runOnUIThread(() -> consumer.accept(storiesResponse));
         });
     }
 
-    private void checkExpiredStories(long dialogId, ArrayList<TLRPC.StoryItem> stories) {
+    private void checkExpiredStories(long dialogId, ArrayList<TL_stories.StoryItem> stories) {
         int currentTime = ConnectionsManager.getInstance(currentAccount).getCurrentTime();
         SQLiteDatabase database = storage.getDatabase();
         ArrayList<Integer> storiesToDeleteIds = null;
-        ArrayList<TLRPC.StoryItem> storiesToDelete = null;
+        ArrayList<TL_stories.StoryItem> storiesToDelete = null;
         for (int i = 0; i < stories.size(); i++) {
-            TLRPC.StoryItem storyItem = stories.get(i);
+            TL_stories.StoryItem storyItem = stories.get(i);
             if (currentTime > stories.get(i).expire_date) {
                 if (storiesToDeleteIds == null) {
                     storiesToDeleteIds = new ArrayList<>();
@@ -161,29 +168,21 @@ public class StoriesStorage {
             } catch (SQLiteException e) {
                 FileLog.e(e);
             }
-            ArrayList<TLRPC.StoryItem> finalStoriesToDelete = storiesToDelete;
+            ArrayList<TL_stories.StoryItem> finalStoriesToDelete = storiesToDelete;
         }
 
     }
 
-    public void putStoriesInternal(long dialogId, TLRPC.TL_userStories userStories) {
+    public void putStoriesInternal(long dialogId, TL_stories.PeerStories userStories) {
         SQLiteDatabase database = storage.getDatabase();
         try {
             if (userStories != null) {
-                ArrayList<TLRPC.StoryItem> storyItems = userStories.stories;
-                SQLitePreparedStatement state = database.executeFast("REPLACE INTO stories VALUES(?, ?, ?, ?, ?, ?)");
+                ArrayList<TL_stories.StoryItem> storyItems = userStories.stories;
+                SQLitePreparedStatement state = database.executeFast("REPLACE INTO stories VALUES(?, ?, ?, ?)");
                 for (int i = 0; i < storyItems.size(); i++) {
                     state.requery();
-                    TLRPC.StoryItem storyItem = storyItems.get(i);
-                    if (dialogId == UserConfig.getInstance(currentAccount).getClientUserId()) {
-                        SQLiteCursor cursor = database.queryFinalized(String.format(Locale.US, "SELECT local_path, local_thumb_path FROM stories WHERE dialog_id = %d AND story_id = %d", dialogId, storyItem.id));
-                        if (cursor.next()) {
-                            storyItem.attachPath = cursor.stringValue(1);
-                            storyItem.firstFramePath = cursor.stringValue(2);
-                        }
-                        cursor.dispose();
-                    }
-                    if (storyItem instanceof TLRPC.TL_storyItemDeleted) {
+                    TL_stories.StoryItem storyItem = storyItems.get(i);
+                    if (storyItem instanceof TL_stories.TL_storyItemDeleted) {
                         FileLog.e("try write deleted story");
                         continue;
                     }
@@ -193,21 +192,11 @@ public class StoriesStorage {
                     NativeByteBuffer data = new NativeByteBuffer(storyItem.getObjectSize());
                     storyItem.serializeToStream(data);
                     state.bindByteBuffer(3, data);
-                    if (storyItem.attachPath == null) {
-                        state.bindNull(4);
-                    } else {
-                        state.bindString(4, storyItem.attachPath);
-                    }
-                    if (storyItem.firstFramePath == null) {
-                        state.bindNull(5);
-                    } else {
-                        state.bindString(5, storyItem.firstFramePath);
-                    }
                     NativeByteBuffer nativeByteBuffer = StoryCustomParamsHelper.writeLocalParams(storyItem);
                     if (nativeByteBuffer != null) {
-                        state.bindByteBuffer(6, nativeByteBuffer);
+                        state.bindByteBuffer(4, nativeByteBuffer);
                     } else {
-                        state.bindNull(6);
+                        state.bindNull(4);
                     }
                     if (nativeByteBuffer != null) {
                         nativeByteBuffer.reuse();
@@ -223,19 +212,11 @@ public class StoriesStorage {
         }
     }
 
-    public void putStoryInternal(long dialogId, TLRPC.StoryItem storyItem) {
+    public void putStoryInternal(long dialogId, TL_stories.StoryItem storyItem) {
         SQLiteDatabase database = storage.getDatabase();
         try {
-            SQLitePreparedStatement state = database.executeFast("REPLACE INTO stories VALUES(?, ?, ?, ?, ?, ?)");
-            if (dialogId == UserConfig.getInstance(currentAccount).getClientUserId()) {
-                SQLiteCursor cursor = database.queryFinalized(String.format(Locale.US, "SELECT local_path, local_thumb_path FROM stories WHERE dialog_id = %d AND story_id = %d", dialogId, storyItem.id));
-                if (cursor.next()) {
-                    storyItem.attachPath = cursor.stringValue(1);
-                    storyItem.firstFramePath = cursor.stringValue(2);
-                }
-                cursor.dispose();
-            }
-            if (storyItem instanceof TLRPC.TL_storyItemDeleted) {
+            SQLitePreparedStatement state = database.executeFast("REPLACE INTO stories VALUES(?, ?, ?, ?)");
+            if (storyItem instanceof TL_stories.TL_storyItemDeleted) {
                 FileLog.e("putStoryInternal: try write deleted story");
                 return;
             }
@@ -245,21 +226,11 @@ public class StoriesStorage {
             NativeByteBuffer data = new NativeByteBuffer(storyItem.getObjectSize());
             storyItem.serializeToStream(data);
             state.bindByteBuffer(3, data);
-            if (storyItem.attachPath == null) {
-                state.bindNull(4);
-            } else {
-                state.bindString(4, storyItem.attachPath);
-            }
-            if (storyItem.firstFramePath == null) {
-                state.bindNull(5);
-            } else {
-                state.bindString(5, storyItem.firstFramePath);
-            }
             NativeByteBuffer nativeByteBuffer = StoryCustomParamsHelper.writeLocalParams(storyItem);
             if (nativeByteBuffer != null) {
-                state.bindByteBuffer(6, nativeByteBuffer);
+                state.bindByteBuffer(4, nativeByteBuffer);
             } else {
-                state.bindNull(6);
+                state.bindNull(4);
             }
             if (nativeByteBuffer != null) {
                 nativeByteBuffer.reuse();
@@ -272,12 +243,12 @@ public class StoriesStorage {
         }
     }
 
-    public void saveAllStories(ArrayList<TLRPC.TL_userStories> user_stories, boolean isNext, boolean hidden, Runnable callback) {
+    public void saveAllStories(ArrayList<TL_stories.PeerStories> user_stories, boolean isNext, boolean hidden, Runnable callback) {
         storage.getStorageQueue().postRunnable(() -> {
             SQLiteDatabase database = storage.getDatabase();
             for (int i = 0; i < user_stories.size(); i++) {
-                TLRPC.TL_userStories stories = user_stories.get(i);
-                fillSkippedStories(stories.user_id, stories);
+                TL_stories.PeerStories stories = user_stories.get(i);
+                fillSkippedStories(DialogObject.getPeerDialogId(stories.peer), stories);
             }
             if (!isNext) {
                 try {
@@ -286,12 +257,22 @@ public class StoriesStorage {
                     ArrayList<Long> dialogsToDelete = new ArrayList<>();
                     while (cursor.next()) {
                         long dialogId = cursor.longValue(0);
-                        TLRPC.User user = MessagesController.getInstance(currentAccount).getUser(dialogId);
-                        if (user == null) {
-                            user = MessagesStorage.getInstance(currentAccount).getUser(dialogId);
-                        }
-                        if (user == null || user.stories_hidden == hidden && !dialogsToDelete.contains(dialogId)) {
-                            dialogsToDelete.add(dialogId);
+                        if (dialogId > 0) {
+                            TLRPC.User user = MessagesController.getInstance(currentAccount).getUser(dialogId);
+                            if (user == null) {
+                                user = MessagesStorage.getInstance(currentAccount).getUser(dialogId);
+                            }
+                            if (user == null || user.stories_hidden == hidden && !dialogsToDelete.contains(dialogId)) {
+                                dialogsToDelete.add(dialogId);
+                            }
+                        } else {
+                            TLRPC.Chat chat = MessagesController.getInstance(currentAccount).getChat(-dialogId);
+                            if (chat == null) {
+                                chat = MessagesStorage.getInstance(currentAccount).getChat(-dialogId);
+                            }
+                            if (chat == null || chat.stories_hidden == hidden && !dialogsToDelete.contains(dialogId)) {
+                                dialogsToDelete.add(dialogId);
+                            }
                         }
                     }
                     if (BuildVars.LOGS_ENABLED) {
@@ -303,8 +284,8 @@ public class StoriesStorage {
                 }
             }
             for (int i = 0; i < user_stories.size(); i++) {
-                TLRPC.TL_userStories stories = user_stories.get(i);
-                putStoriesInternal(stories.user_id, stories);
+                TL_stories.PeerStories stories = user_stories.get(i);
+                putStoriesInternal(DialogObject.getPeerDialogId(stories.peer), stories);
             }
             if (callback != null) {
                 AndroidUtilities.runOnUIThread(callback);
@@ -312,15 +293,15 @@ public class StoriesStorage {
         });
     }
 
-    private void fillSkippedStories(long user_id, TLRPC.TL_userStories userStories) {
+    private void fillSkippedStories(long user_id, TL_stories.PeerStories userStories) {
         try {
             if (userStories != null) {
-                ArrayList<TLRPC.StoryItem> storyItems = userStories.stories;
+                ArrayList<TL_stories.StoryItem> storyItems = userStories.stories;
                 for (int i = 0; i < storyItems.size(); i++) {
-                    TLRPC.StoryItem storyItem = storyItems.get(i);
-                    if (storyItem instanceof TLRPC.TL_storyItemSkipped) {
-                        TLRPC.StoryItem storyInDatabase = getStoryInternal(user_id, storyItems.get(i).id);
-                        if (storyInDatabase instanceof TLRPC.TL_storyItem) {
+                    TL_stories.StoryItem storyItem = storyItems.get(i);
+                    if (storyItem instanceof TL_stories.TL_storyItemSkipped) {
+                        TL_stories.StoryItem storyInDatabase = getStoryInternal(user_id, storyItems.get(i).id);
+                        if (storyInDatabase instanceof TL_stories.TL_storyItem) {
                             storyItems.set(i, storyInDatabase);
                         }
                     }
@@ -331,23 +312,19 @@ public class StoriesStorage {
         }
     }
 
-    private TLRPC.StoryItem getStoryInternal(long user_id, int storyId) {
+    private TL_stories.StoryItem getStoryInternal(long user_id, int storyId) {
         SQLiteDatabase database = storage.getDatabase();
         SQLiteCursor cursor = null;
-        TLRPC.StoryItem storyItem = null;
+        TL_stories.StoryItem storyItem = null;
         try {
-            cursor = database.queryFinalized(String.format(Locale.US, "SELECT data, local_path, local_thumb_path, custom_params FROM stories WHERE dialog_id = %d AND story_id = %d", user_id, storyId));
+            cursor = database.queryFinalized(String.format(Locale.US, "SELECT data, custom_params FROM stories WHERE dialog_id = %d AND story_id = %d", user_id, storyId));
 
             if (cursor.next()) {
                 NativeByteBuffer data = cursor.byteBufferValue(0);
-                String path = cursor.stringValue(1);
-                String thumbPath = cursor.stringValue(2);
-                NativeByteBuffer customData = cursor.byteBufferValue(3);
+                NativeByteBuffer customData = cursor.byteBufferValue(1);
                 if (data != null) {
-                    storyItem = TLRPC.StoryItem.TLdeserialize(data, data.readInt32(true), true);
+                    storyItem = TL_stories.StoryItem.TLdeserialize(data, data.readInt32(true), true);
                     storyItem.dialogId = user_id;
-                    storyItem.attachPath = path;
-                    storyItem.firstFramePath = thumbPath;
                     data.reuse();
                 }
                 if (storyItem != null) {
@@ -365,17 +342,17 @@ public class StoriesStorage {
     }
 
 
-    public void getStories(long dialogId, Consumer<TLRPC.TL_userStories> consumer) {
+    public void getStories(long dialogId, Consumer<TL_stories.PeerStories> consumer) {
         storage.getStorageQueue().postRunnable(() -> {
-            TLRPC.TL_userStories finalUserStories = getStoriesInternal(dialogId);
+            TL_stories.PeerStories finalUserStories = getStoriesInternal(dialogId);
             AndroidUtilities.runOnUIThread(() -> consumer.accept(finalUserStories));
         });
     }
 
-    private TLRPC.TL_userStories getStoriesInternal(long dialogId) {
+    private TL_stories.PeerStories getStoriesInternal(long dialogId) {
         SQLiteDatabase database = storage.getDatabase();
         SQLiteCursor cursor = null;
-        TLRPC.TL_userStories userStories = null;
+        TL_stories.PeerStories userStories = null;
         try {
             cursor = database.queryFinalized(String.format(Locale.US, "SELECT count, max_read FROM stories_counter WHERE dialog_id = %d", dialogId));
             int count = 0;
@@ -387,17 +364,13 @@ public class StoriesStorage {
             cursor.dispose();
             cursor = null;
 
-            cursor = database.queryFinalized(String.format(Locale.US, "SELECT data, local_path, local_thumb_path, custom_params FROM stories WHERE dialog_id = %d", dialogId));
-            ArrayList<TLRPC.StoryItem> storyItems = new ArrayList<>();
+            cursor = database.queryFinalized(String.format(Locale.US, "SELECT data, custom_params FROM stories WHERE dialog_id = %d", dialogId));
+            ArrayList<TL_stories.StoryItem> storyItems = new ArrayList<>();
             while (cursor.next()) {
                 NativeByteBuffer data = cursor.byteBufferValue(0);
-                String path = cursor.stringValue(1);
-                String thumbPath = cursor.stringValue(2);
-                NativeByteBuffer customData = cursor.byteBufferValue(3);
+                NativeByteBuffer customData = cursor.byteBufferValue(1);
                 if (data != null) {
-                    TLRPC.StoryItem storyItem = TLRPC.StoryItem.TLdeserialize(data, data.readInt32(true), true);
-                    storyItem.attachPath = path;
-                    storyItem.firstFramePath = thumbPath;
+                    TL_stories.StoryItem storyItem = TL_stories.StoryItem.TLdeserialize(data, data.readInt32(true), true);
                     StoryCustomParamsHelper.readLocalParams(storyItem, customData);
                     storyItems.add(storyItem);
                     data.reuse();
@@ -408,10 +381,10 @@ public class StoriesStorage {
             }
             cursor.dispose();
             cursor = null;
-            userStories = new TLRPC.TL_userStories();
+            userStories = new TL_stories.TL_peerStories();
             userStories.max_read_id = maxReadId;
             userStories.stories = storyItems;
-            userStories.user_id = dialogId;
+            userStories.peer = MessagesController.getInstance(currentAccount).getPeer(dialogId);
 
         } catch (Exception e) {
             FileLog.e(e);
@@ -423,7 +396,7 @@ public class StoriesStorage {
         return userStories;
     }
 
-    public void updateStoryItem(long dialogId, TLRPC.StoryItem storyItem) {
+    public void updateStoryItem(long dialogId, TL_stories.StoryItem storyItem) {
         if (dialogId == 0) {
             return;
         }
@@ -432,11 +405,11 @@ public class StoriesStorage {
         });
     }
 
-    private void updateStoryItemInternal(long dialogId, TLRPC.StoryItem storyItem) {
+    private void updateStoryItemInternal(long dialogId, TL_stories.StoryItem storyItem) {
         if (dialogId == 0 || storyItem == null) {
             return;
         }
-        if (storyItem instanceof TLRPC.TL_storyItemDeleted) {
+        if (storyItem instanceof TL_stories.TL_storyItemDeleted) {
             FileLog.e("StoriesStorage: try write deleted story");
         }
         if (StoriesUtilities.isExpired(currentAccount, storyItem)) {
@@ -445,17 +418,7 @@ public class StoriesStorage {
         SQLiteDatabase database = storage.getDatabase();
         SQLitePreparedStatement state;
         try {
-            String attachPath = storyItem.attachPath;
-            String thumbPath = storyItem.firstFramePath;
-            if (dialogId == UserConfig.getInstance(currentAccount).getClientUserId()) {
-                SQLiteCursor cursor = database.queryFinalized(String.format(Locale.US, "SELECT local_path, local_thumb_path FROM stories WHERE dialog_id = %d AND story_id = %d", dialogId, storyItem.id));
-                if (cursor.next()) {
-                    attachPath = cursor.stringValue(1);
-                    thumbPath = cursor.stringValue(2);
-                }
-                cursor.dispose();
-            }
-            state = database.executeFast("REPLACE INTO stories VALUES(?, ?, ?, ?, ?, ?)");
+            state = database.executeFast("REPLACE INTO stories VALUES(?, ?, ?, ?)");
             state.requery();
 
             state.bindLong(1, dialogId);
@@ -464,21 +427,11 @@ public class StoriesStorage {
             NativeByteBuffer data = new NativeByteBuffer(storyItem.getObjectSize());
             storyItem.serializeToStream(data);
             state.bindByteBuffer(3, data);
-            if (attachPath == null) {
-                state.bindNull(4);
-            } else {
-                state.bindString(4, attachPath);
-            }
-            if (thumbPath == null) {
-                state.bindNull(5);
-            } else {
-                state.bindString(5, thumbPath);
-            }
             NativeByteBuffer nativeByteBuffer = StoryCustomParamsHelper.writeLocalParams(storyItem);
             if (nativeByteBuffer != null) {
-                state.bindByteBuffer(6, nativeByteBuffer);
+                state.bindByteBuffer(4, nativeByteBuffer);
             } else {
-                state.bindNull(6);
+                state.bindNull(4);
             }
             if (nativeByteBuffer != null) {
                 nativeByteBuffer.reuse();
@@ -491,10 +444,18 @@ public class StoriesStorage {
     }
 
     public void updateMaxReadId(long dialogId, int max_read_id) {
-        TLRPC.UserFull userFull = MessagesController.getInstance(currentAccount).getUserFull(dialogId);
-        if (userFull != null && userFull.stories != null) {
-            userFull.stories.max_read_id = max_read_id;
-            storage.updateUserInfo(userFull, false);
+        if (dialogId > 0) {
+            TLRPC.UserFull userFull = MessagesController.getInstance(currentAccount).getUserFull(dialogId);
+            if (userFull != null && userFull.stories != null) {
+                userFull.stories.max_read_id = max_read_id;
+                storage.updateUserInfo(userFull, false);
+            }
+        } else {
+            TLRPC.ChatFull chatFull = MessagesController.getInstance(currentAccount).getChatFull(-dialogId);
+            if (chatFull != null && chatFull.stories != null) {
+                chatFull.stories.max_read_id = max_read_id;
+                storage.updateChatInfo(chatFull, false);
+            }
         }
         storage.getStorageQueue().postRunnable(() -> {
             SQLiteDatabase database = storage.getDatabase();
@@ -506,26 +467,22 @@ public class StoriesStorage {
         });
     }
 
-    public void processUpdate(TLRPC.TL_updateStory updateStory) {
+    public void processUpdate(TL_stories.TL_updateStory updateStory) {
         storage.getStorageQueue().postRunnable(() -> {
             SQLiteDatabase database = storage.getDatabase();
             SQLiteCursor cursor = null;
             try {
-                long dialogId = updateStory.user_id;
+                long dialogId = DialogObject.getPeerDialogId(updateStory.peer);
                 int count = 0;
                 int storyId = updateStory.story.id;
                 boolean storyExist = false;
-                if (updateStory.story instanceof TLRPC.TL_storyItemDeleted) {
-                    cursor = database.queryFinalized(String.format(Locale.US, "SELECT data, local_path, local_thumb_path, custom_params FROM stories WHERE dialog_id = %d AND story_id = %d", dialogId, storyId));
+                if (updateStory.story instanceof TL_stories.TL_storyItemDeleted) {
+                    cursor = database.queryFinalized(String.format(Locale.US, "SELECT data, custom_params FROM stories WHERE dialog_id = %d AND story_id = %d", dialogId, storyId));
                     if (cursor.next()) {
                         NativeByteBuffer data = cursor.byteBufferValue(0);
-                        String path = cursor.stringValue(1);
-                        String thumbPath = cursor.stringValue(2);
-                        NativeByteBuffer customData = cursor.byteBufferValue(3);
+                        NativeByteBuffer customData = cursor.byteBufferValue(1);
                         if (data != null) {
-                            TLRPC.StoryItem storyItem = TLRPC.StoryItem.TLdeserialize(data, data.readInt32(true), true);
-                            storyItem.attachPath = path;
-                            storyItem.firstFramePath = thumbPath;
+                            TL_stories.StoryItem storyItem = TL_stories.StoryItem.TLdeserialize(data, data.readInt32(true), true);
                             StoryCustomParamsHelper.readLocalParams(storyItem, customData);
                             data.reuse();
                         }
@@ -539,7 +496,7 @@ public class StoriesStorage {
                     if (storyExist) {
                         count--;
                     }
-                } else if (updateStory.story instanceof TLRPC.TL_storyItem) {
+                } else if (updateStory.story instanceof TL_stories.TL_storyItem) {
                     updateStoryItemInternal(dialogId, updateStory.story);
                     cursor = database.queryFinalized(String.format(Locale.US, "SELECT story_id FROM stories WHERE dialog_id = %d AND story_id = %d", dialogId, storyId));
                     if (cursor.next()) {
@@ -567,10 +524,10 @@ public class StoriesStorage {
         });
     }
 
-    public void updateStories(TLRPC.TL_userStories currentStories) {
+    public void updateStories(TL_stories.PeerStories currentStories) {
         storage.getStorageQueue().postRunnable(() -> {
             for (int i = 0; i < currentStories.stories.size(); i++) {
-                updateStoryItemInternal(currentStories.user_id, currentStories.stories.get(i));
+                updateStoryItemInternal(DialogObject.getPeerDialogId(currentStories.peer), currentStories.stories.get(i));
             }
         });
     }
@@ -600,6 +557,9 @@ public class StoriesStorage {
 
     //storage queue
     public void fillMessagesWithStories(LongSparseArray<ArrayList<MessageObject>> messagesWithUnknownStories, Runnable runnable, int classGuid) {
+        fillMessagesWithStories(messagesWithUnknownStories, runnable, classGuid, true);
+    }
+    public void fillMessagesWithStories(LongSparseArray<ArrayList<MessageObject>> messagesWithUnknownStories, Runnable runnable, int classGuid, boolean updateDatabase) {
         if (runnable == null) {
             return;
         }
@@ -614,8 +574,8 @@ public class StoriesStorage {
             for (int j = 0; j < messageObjects.size(); j++) {
                 MessageObject messageObject = messageObjects.get(j);
                 int storyId = getStoryId(messageObject);
-                TLRPC.StoryItem storyItem = getStoryInternal(dialogId, storyId);
-                if (storyItem != null && !(storyItem instanceof TLRPC.TL_storyItemSkipped)) {
+                TL_stories.StoryItem storyItem = getStoryInternal(dialogId, storyId);
+                if (storyItem != null && !(storyItem instanceof TL_stories.TL_storyItemSkipped)) {
                     applyStory(currentAccount, dialogId, messageObject, storyItem);
 
                     updatedMessages.add(messageObject);
@@ -629,21 +589,23 @@ public class StoriesStorage {
             }
         }
 
-        updateMessagesWithStories(updatedMessages);
+        if (updateDatabase) {
+            updateMessagesWithStories(updatedMessages);
+        }
 
         if (!messagesWithUnknownStories.isEmpty()) {
             int requestsCount[] = new int[]{messagesWithUnknownStories.size()};
             for (int i = 0; i < messagesWithUnknownStories.size(); i++) {
                 long dialogId = messagesWithUnknownStories.keyAt(i);
                 ArrayList<MessageObject> messageObjects = messagesWithUnknownStories.valueAt(i);
-                TLRPC.TL_stories_getStoriesByID request = new TLRPC.TL_stories_getStoriesByID();
-                request.user_id = MessagesController.getInstance(currentAccount).getInputUser(dialogId);
+                TL_stories.TL_stories_getStoriesByID request = new TL_stories.TL_stories_getStoriesByID();
+                request.peer = MessagesController.getInstance(currentAccount).getInputPeer(dialogId);
                 for (int j = 0; j < messageObjects.size(); j++) {
                     request.id.add(getStoryId(messageObjects.get(j)));
                 }
                 int reqId = ConnectionsManager.getInstance(currentAccount).sendRequest(request, (response, error) -> {
                     if (response != null) {
-                        TLRPC.TL_stories_stories stories = (TLRPC.TL_stories_stories) response;
+                        TL_stories.TL_stories_stories stories = (TL_stories.TL_stories_stories) response;
                         for (int j = 0; j < messageObjects.size(); j++) {
                             MessageObject messageObject = messageObjects.get(j);
                             boolean found = false;
@@ -655,13 +617,15 @@ public class StoriesStorage {
                                 }
                             }
                             if (!found) {
-                                TLRPC.TL_storyItemDeleted storyItemDeleted = new TLRPC.TL_storyItemDeleted();
+                                TL_stories.TL_storyItemDeleted storyItemDeleted = new TL_stories.TL_storyItemDeleted();
                                 storyItemDeleted.id = getStoryId(messageObject);
                                 applyStory(currentAccount, dialogId, messageObject, storyItemDeleted);
                             }
-                            storage.getStorageQueue().postRunnable(() -> {
-                                updateMessagesWithStories(messageObjects);
-                            });
+                            if (updateDatabase) {
+                                storage.getStorageQueue().postRunnable(() -> {
+                                    updateMessagesWithStories(messageObjects);
+                                });
+                            }
                         }
                     }
                     requestsCount[0]--;
@@ -678,13 +642,14 @@ public class StoriesStorage {
         }
     }
 
-    public static void applyStory(int currentAccount, long dialogId, MessageObject messageObject, TLRPC.StoryItem storyItem) {
+    public static void applyStory(int currentAccount, long dialogId, MessageObject messageObject, TL_stories.StoryItem storyItem) {
         if (messageObject.messageOwner.reply_to instanceof TLRPC.TL_messageReplyStoryHeader && messageObject.messageOwner.reply_to.story_id == storyItem.id) {
             messageObject.messageOwner.replyStory = checkExpiredStateLocal(currentAccount, dialogId, storyItem);
         }
         if (messageObject.type == MessageObject.TYPE_STORY || messageObject.type == MessageObject.TYPE_STORY_MENTION) {
             MessageMediaStoryFull mediaStoryFull = new MessageMediaStoryFull();
-            mediaStoryFull.user_id = messageObject.messageOwner.media.user_id;
+            mediaStoryFull.user_id = DialogObject.getPeerDialogId(messageObject.messageOwner.media.peer);
+            mediaStoryFull.peer = messageObject.messageOwner.media.peer;
             mediaStoryFull.id = messageObject.messageOwner.media.id;
             mediaStoryFull.storyItem = checkExpiredStateLocal(currentAccount, dialogId, storyItem);
             mediaStoryFull.via_mention = messageObject.messageOwner.media.via_mention;
@@ -773,8 +738,8 @@ public class StoriesStorage {
         }
     }
 
-    public static TLRPC.StoryItem checkExpiredStateLocal(int currentAccount, long dialogId, TLRPC.StoryItem storyItem) {
-        if (storyItem instanceof TLRPC.TL_storyItemDeleted) {
+    public static TL_stories.StoryItem checkExpiredStateLocal(int currentAccount, long dialogId, TL_stories.StoryItem storyItem) {
+        if (storyItem instanceof TL_stories.TL_storyItemDeleted) {
             return storyItem;
         }
         int currentTime = ConnectionsManager.getInstance(currentAccount).getCurrentTime();
@@ -785,7 +750,7 @@ public class StoriesStorage {
             expired = currentTime - storyItem.date > EXPIRE_AFTER;
         }
         if (!storyItem.pinned && expired && dialogId != 0 && dialogId != UserConfig.getInstance(currentAccount).clientUserId) {
-            TLRPC.TL_storyItemDeleted storyItemDeleted = new TLRPC.TL_storyItemDeleted();
+            TL_stories.TL_storyItemDeleted storyItemDeleted = new TL_stories.TL_storyItemDeleted();
             storyItemDeleted.id = storyItem.id;
             return storyItemDeleted;
         }
@@ -813,9 +778,9 @@ public class StoriesStorage {
         });
     }
 
-    public void putUserStories(TLRPC.TL_userStories userStories) {
+    public void putPeerStories(TL_stories.PeerStories userStories) {
         storage.getStorageQueue().postRunnable(() -> {
-            putStoriesInternal(userStories.user_id, userStories);
+            putStoriesInternal(DialogObject.getPeerDialogId(userStories.peer), userStories);
         });
     }
 

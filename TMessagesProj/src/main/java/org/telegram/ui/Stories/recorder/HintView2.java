@@ -8,10 +8,14 @@ import android.animation.AnimatorListenerAdapter;
 import android.animation.ValueAnimator;
 import android.content.Context;
 import android.content.res.ColorStateList;
+import android.graphics.Bitmap;
+import android.graphics.BitmapShader;
 import android.graphics.Canvas;
 import android.graphics.ColorFilter;
+import android.graphics.ColorMatrix;
+import android.graphics.ColorMatrixColorFilter;
 import android.graphics.CornerPathEffect;
-import android.graphics.LinearGradient;
+import android.graphics.Matrix;
 import android.graphics.Paint;
 import android.graphics.Path;
 import android.graphics.PixelFormat;
@@ -28,37 +32,43 @@ import android.os.Build;
 import android.text.Layout;
 import android.text.Spannable;
 import android.text.SpannableString;
+import android.text.Spanned;
 import android.text.StaticLayout;
 import android.text.TextPaint;
 import android.text.style.ClickableSpan;
-import android.util.Log;
 import android.util.StateSet;
 import android.view.MotionEvent;
 import android.view.View;
 import android.view.ViewConfiguration;
-import android.view.animation.OvershootInterpolator;
 
 import androidx.annotation.NonNull;
 import androidx.annotation.Nullable;
-import androidx.core.graphics.ColorUtils;
 
+import org.checkerframework.checker.units.qual.C;
 import org.telegram.messenger.AndroidUtilities;
+import org.telegram.messenger.Emoji;
+import org.telegram.messenger.LiteMode;
 import org.telegram.messenger.LocaleController;
 import org.telegram.messenger.R;
 import org.telegram.messenger.Utilities;
 import org.telegram.ui.ActionBar.Theme;
+import org.telegram.ui.Cells.BaseCell;
+import org.telegram.ui.Components.AnimatedEmojiDrawable;
+import org.telegram.ui.Components.AnimatedEmojiSpan;
 import org.telegram.ui.Components.AnimatedFloat;
 import org.telegram.ui.Components.AnimatedTextView;
 import org.telegram.ui.Components.ButtonBounce;
 import org.telegram.ui.Components.CubicBezierInterpolator;
 import org.telegram.ui.Components.LinkPath;
 import org.telegram.ui.Components.LinkSpanDrawable;
+import org.telegram.ui.Components.RLottieDrawable;
+import org.telegram.ui.Components.TypefaceSpan;
 
 public class HintView2 extends View {
 
     // direction of an arrow to point
     // the gravity of location would be the same, location of arrow opposite:
-    // f.ex. hint with DIRECTION_LEFT has arrow on right and would be forced to the left ({view} <{hint})
+    // f.ex. hint with DIRECTION_LEFT has arrow on left of hint and would be forced to the left ({view} <{hint})
     public static final int DIRECTION_LEFT = 0;
     public static final int DIRECTION_TOP = 1;
     public static final int DIRECTION_RIGHT = 2;
@@ -72,18 +82,27 @@ public class HintView2 extends View {
     private boolean useScale = true;
     private boolean useTranslate = true;
     private boolean useAlpha = true;
+    private boolean useBlur = false;
     private int textMaxWidth = -1;
 
     private Drawable closeButtonDrawable;
     private boolean closeButton;
 
-    private float rounding = dp(8);
+    protected float rounding = dp(8);
     private final RectF innerPadding = new RectF(dp(11), dp(6), dp(11), dp(7));
     private float closeButtonMargin = dp(2);
     private float arrowHalfWidth = dp(7);
     private float arrowHeight = dp(6);
 
-    private final Paint backgroundPaint = new Paint(Paint.ANTI_ALIAS_FLAG);
+    protected final Paint backgroundPaint = new Paint(Paint.ANTI_ALIAS_FLAG);
+    private Paint blurBackgroundPaint, blurCutPaint;
+
+    private int blurBitmapWidth, blurBitmapHeight;
+    private BitmapShader blurBitmapShader;
+    private Matrix blurBitmapMatrix;
+    private float blurScale = 12f;
+    private float blurAlpha = .25f;
+    private int[] blurPos;
 
     private CharSequence textToSet;
     private AnimatedTextView.AnimatedTextDrawable textDrawable;
@@ -92,7 +111,8 @@ public class HintView2 extends View {
     private final TextPaint textPaint = new TextPaint(Paint.ANTI_ALIAS_FLAG);
     private Layout.Alignment textLayoutAlignment = Layout.Alignment.ALIGN_NORMAL;
     private StaticLayout textLayout;
-    private float textLayoutLeft, textLayoutWidth;
+    private AnimatedEmojiSpan.EmojiGroupedSpans emojiGroupedSpans;
+    private float textLayoutLeft, textLayoutWidth, textLayoutHeight;
     private LinkSpanDrawable.LinkCollector links = new LinkSpanDrawable.LinkCollector();
     private float textX, textY;
 
@@ -104,6 +124,12 @@ public class HintView2 extends View {
 
     private Drawable selectorDrawable;
     private Paint cutSelectorPaint;
+
+    private Drawable icon;
+    private float iconTx, iconTy;
+    private int iconMargin = dp(2);
+    private int iconWidth, iconHeight;
+    private boolean iconLeft;
 
     public HintView2(Context context, int direction) {
         super(context);
@@ -125,6 +151,9 @@ public class HintView2 extends View {
         backgroundPaint.setPathEffect(new CornerPathEffect(rounding));
         if (cutSelectorPaint != null) {
             cutSelectorPaint.setPathEffect(new CornerPathEffect(rounding));
+        }
+        if (blurCutPaint != null) {
+            blurCutPaint.setPathEffect(new CornerPathEffect(rounding));
         }
         return this;
     }
@@ -173,6 +202,15 @@ public class HintView2 extends View {
         return this;
     }
 
+    public HintView2 allowBlur() {
+        return allowBlur(true);
+    }
+
+    public HintView2 allowBlur(boolean allow) {
+        useBlur = allow && LiteMode.isEnabled(LiteMode.FLAG_CHAT_BLUR);
+        return this;
+    }
+
     public HintView2 setTextSize(int sizeDp) {
         textDrawable.setTextSize(dp(sizeDp));
         textPaint.setTextSize(dp(sizeDp));
@@ -203,6 +241,78 @@ public class HintView2 extends View {
         return this;
     }
 
+    public HintView2 setIcon(int resId) {
+        RLottieDrawable icon = new RLottieDrawable(resId, "" + resId, dp(34), dp(34));
+        icon.start();
+        return setIcon(icon);
+    }
+
+    public HintView2 setIcon(Drawable icon) {
+        if (this.icon != null) {
+            this.icon.setCallback(null);
+        }
+        this.icon = icon;
+        if (this.icon != null) {
+            this.icon.setCallback(this);
+            if (this.icon instanceof RLottieDrawable) {
+                duration = Math.max(duration, ((RLottieDrawable) this.icon).getDuration());
+            }
+            // TODO: to be custom
+            this.iconWidth  = this.icon.getIntrinsicWidth();
+            this.iconHeight = this.icon.getIntrinsicHeight();
+            this.iconLeft = true;
+        }
+        return this;
+    }
+
+    private static float measureCorrectly(CharSequence text, TextPaint paint) {
+        if (text == null) {
+            return 0;
+        }
+        if (!(text instanceof Spanned)) {
+            return paint.measureText(text.toString());
+        }
+        Spanned spanned = (Spanned) text;
+        TypefaceSpan[] spans = spanned.getSpans(0, text.length(), TypefaceSpan.class);
+        AnimatedEmojiSpan[] animatedSpans = spanned.getSpans(0, text.length(), AnimatedEmojiSpan.class);
+        Emoji.EmojiSpan[] emojiSpans = spanned.getSpans(0, text.length(), Emoji.EmojiSpan.class);
+        int add = 0;
+        for (int i = 0; i < emojiSpans.length; ++i) {
+            add += emojiSpans[i].size;
+        }
+        for (int i = 0; i < animatedSpans.length; ++i) {
+            add += animatedSpans[i].size;
+        }
+        if (spans == null || spans.length == 0) {
+            return paint.measureText(text.toString()) + add;
+        }
+        float len = 0;
+        int s = 0, e;
+        for (int i = 0; i < spans.length; ++i) {
+            int spanstart = spanned.getSpanStart(spans[i]);
+            int spanend   = spanned.getSpanEnd(spans[i]);
+
+            e = Math.max(s, spanstart);
+            if (e - s > 0) {
+                len += paint.measureText(spanned, s, e);
+            }
+            s = e;
+            e = Math.max(s, spanend);
+            if (e - s > 0) {
+                Typeface oldTypeface = paint.getTypeface();
+                paint.setTypeface(spans[i].getTypeface());
+                len += paint.measureText(spanned, s, e);
+                paint.setTypeface(oldTypeface);
+            }
+            s = e;
+        }
+        e = Math.max(s, text.length());
+        if (e - s > 0) {
+            len += paint.measureText(spanned, s, e);
+        }
+        return len + add;
+    }
+
     // returns max width
     public static int cutInFancyHalf(CharSequence text, TextPaint paint) {
         int mid = text.length() / 2;
@@ -210,14 +320,16 @@ public class HintView2 extends View {
         float prevLeftWidth = 0;
         float prevRightWidth = Float.MAX_VALUE;
 
+        int dir = -1;
         for (int i = 0; i < 10; ++i) {
             // Adjust the mid to point to the nearest space on the left
-            while (mid > 0 && text.charAt(mid) != ' ') {
-                mid--;
+            while (mid > 0 && mid < text.length() && text.charAt(mid) != ' ') {
+                mid += dir;
             }
 
-            leftWidth = paint.measureText(text.subSequence(0, mid).toString());
-            rightWidth = paint.measureText(text.subSequence(mid, text.length()).toString().trim());
+
+            leftWidth = measureCorrectly(text.subSequence(0, mid), paint);
+            rightWidth = measureCorrectly(AndroidUtilities.getTrimmedString(text.subSequence(mid, text.length())), paint);
 
             // If we're not making progress, exit the loop.
             // (This is a basic way to ensure termination when we can't improve the result.)
@@ -230,11 +342,13 @@ public class HintView2 extends View {
 
             // If left side is shorter, move midpoint to the right.
             if (leftWidth < rightWidth) {
-                mid++;
+                dir = +1;
+                mid += dir;
             }
             // If right side is shorter or equal, move midpoint to the left.
             else {
-                mid--;
+                dir = -1;
+                mid += dir;
             }
 
             // Ensure mid doesn't go out of bounds
@@ -276,6 +390,17 @@ public class HintView2 extends View {
         return this;
     }
 
+    public HintView2 setIconMargin(int marginDp) {
+        this.iconMargin = dp(marginDp);
+        return this;
+    }
+
+    public HintView2 setIconTranslate(float iconTx, float iconTy) {
+        this.iconTx = iconTx;
+        this.iconTy = iconTy;
+        return this;
+    }
+
     public HintView2 setCloseButtonMargin(int marginDp) {
         this.closeButtonMargin = dp(marginDp);
         return this;
@@ -302,7 +427,7 @@ public class HintView2 extends View {
                 new int[][]{ StateSet.WILD_CARD },
                 new int[]{ selectorColor }
         );
-        selectorDrawable = new RippleDrawable(colorStateList, null, new Drawable() {
+        selectorDrawable = new BaseCell.RippleDrawableSafe(colorStateList, null, new Drawable() {
             @Override
             public void draw(@NonNull Canvas canvas) {
                 canvas.save();
@@ -379,9 +504,11 @@ public class HintView2 extends View {
     private final Runnable hideRunnable = this::hide;
 
     public HintView2 show() {
+        prepareBlur();
         if (shown) {
             bounceShow();
         }
+        AndroidUtilities.makeAccessibilityAnnouncement(getText());
         shown = true;
         invalidate();
 
@@ -499,7 +626,15 @@ public class HintView2 extends View {
             right = Math.max(right, textLayout.getLineRight(i));
         }
         textLayoutWidth = Math.max(0, right - left);
+        textLayoutHeight = textLayout.getHeight();
         textLayoutLeft = left;
+        emojiGroupedSpans = AnimatedEmojiSpan.update(AnimatedEmojiDrawable.CACHE_TYPE_MESSAGES, this, emojiGroupedSpans, textLayout);
+    }
+
+    @Override
+    protected void onDetachedFromWindow() {
+        super.onDetachedFromWindow();
+        AnimatedEmojiSpan.release(this, emojiGroupedSpans);
     }
 
     private final ButtonBounce bounce = new ButtonBounce(this, 2f, 5f);
@@ -507,14 +642,27 @@ public class HintView2 extends View {
 
     private final Rect boundsWithArrow = new Rect();
     private final RectF bounds = new RectF();
-    private final Path path = new Path();
+    protected final Path path = new Path();
     private float arrowX, arrowY;
     private float pathLastWidth, pathLastHeight;
     private boolean pathSet;
     private boolean firstDraw = true;
 
+    protected void drawBgPath(Canvas canvas) {
+        if (blurBackgroundPaint != null) {
+            canvas.saveLayerAlpha(0, 0, getWidth(), getHeight(), 0xFF, Canvas.ALL_SAVE_FLAG);
+            canvas.drawPath(path, blurBackgroundPaint);
+            canvas.drawPath(path, blurCutPaint);
+            canvas.restore();
+        }
+        canvas.drawPath(path, backgroundPaint);
+    }
+
     @Override
     protected void dispatchDraw(Canvas canvas) {
+        if (drawingMyBlur) {
+            return;
+        }
         if (multiline && textLayout == null) {
             return;
         }
@@ -529,7 +677,7 @@ public class HintView2 extends View {
         }
 
         float contentWidth = multiline ? textLayoutWidth : textDrawable.getCurrentWidth();
-        float contentHeight = multiline ? (textLayout == null ? 0 : textLayout.getHeight()) : textDrawable.getHeight();
+        float contentHeight = multiline ? textLayoutHeight : textDrawable.getHeight();
         if (closeButton) {
             if (closeButtonDrawable == null) {
                 closeButtonDrawable = getContext().getResources().getDrawable(R.drawable.msg_mini_close_tooltip).mutate();
@@ -537,6 +685,10 @@ public class HintView2 extends View {
             }
             contentWidth += closeButtonMargin + closeButtonDrawable.getIntrinsicWidth();
             contentHeight = Math.max(closeButtonDrawable.getIntrinsicHeight(), contentHeight);
+        }
+        if (icon != null) {
+            contentWidth += iconWidth + iconMargin;
+            contentHeight = Math.max(iconHeight, contentHeight);
         }
 
         final float width = innerPadding.left + contentWidth + innerPadding.right;
@@ -553,7 +705,6 @@ public class HintView2 extends View {
         }
         float bounceScale = bounce.getScale(.025f);
         if (bounceScale != 1) {
-//            canvas.scale(bounceScale, bounceScale, bounceX, bounceY);
             canvas.scale(bounceScale, bounceScale, arrowX, arrowY);
         }
         if (bounceT != 1) {
@@ -566,9 +717,17 @@ public class HintView2 extends View {
             }
         }
 
+        updateBlurBounds();
         final int wasAlpha = backgroundPaint.getAlpha();
-        backgroundPaint.setAlpha((int) (wasAlpha * alpha));
-        canvas.drawPath(path, backgroundPaint);
+        AndroidUtilities.rectTmp.set(bounds);
+        AndroidUtilities.rectTmp.inset(-arrowHeight, -arrowHeight);
+        float backgroundAlpha = alpha;
+        if (blurBackgroundPaint != null && useBlur) {
+            backgroundAlpha *= (1f - blurAlpha);
+            blurBackgroundPaint.setAlpha((int) (0xFF * alpha));
+        }
+        backgroundPaint.setAlpha((int) (wasAlpha * backgroundAlpha));
+        drawBgPath(canvas);
         backgroundPaint.setAlpha(wasAlpha);
 
         if (selectorDrawable != null) {
@@ -577,20 +736,44 @@ public class HintView2 extends View {
             selectorDrawable.draw(canvas);
         }
 
+        final float cy = ((bounds.bottom - innerPadding.bottom) + (bounds.top + innerPadding.top)) / 2f;
+        float tx = 0;
+        if (icon != null) {
+            if (iconLeft) {
+                icon.setBounds(
+                    (int) (iconTx + bounds.left + innerPadding.left / 2f),
+                    (int) (iconTy + cy - iconHeight / 2f),
+                    (int) (iconTx + bounds.left + innerPadding.left / 2f + iconWidth),
+                    (int) (iconTy + cy + iconHeight / 2f)
+                );
+                tx += iconWidth + iconMargin;
+            } else {
+                icon.setBounds(
+                    (int) (iconTx + bounds.right - innerPadding.right / 2f - iconWidth),
+                    (int) (iconTy + cy - iconHeight / 2f),
+                    (int) (iconTx + bounds.right - innerPadding.right / 2f),
+                    (int) (iconTy + cy + iconHeight / 2f)
+                );
+            }
+            icon.setAlpha((int) (0xFF * alpha));
+            icon.draw(canvas);
+        }
+
         if (multiline) {
             canvas.saveLayerAlpha(0, 0, getWidth(), Math.max(getHeight(), height), (int) (0xFF * alpha), Canvas.ALL_SAVE_FLAG);
-            canvas.translate(textX = bounds.left + innerPadding.left - textLayoutLeft, textY = bounds.top + innerPadding.top);
+            canvas.translate(textX = tx + bounds.left + innerPadding.left - textLayoutLeft, textY = cy - textLayoutHeight / 2f);
             if (links.draw(canvas)) {
                 invalidate();
             }
             textLayout.draw(canvas);
+            AnimatedEmojiSpan.drawAnimatedEmojis(canvas, textLayout, emojiGroupedSpans, 0, null, 0, 0, 0, 1f);
             canvas.restore();
         } else {
             if (textToSet != null) {
                 textDrawable.setText(textToSet, shown);
                 textToSet = null;
             }
-            textDrawable.setBounds((int) (bounds.left + innerPadding.left), (int) (bounds.top + innerPadding.top), (int) (bounds.left + innerPadding.left + contentWidth), (int) (bounds.bottom - innerPadding.bottom));
+            textDrawable.setBounds((int) (tx + bounds.left + innerPadding.left), (int) (cy - textLayoutHeight / 2f), (int) (bounds.left + innerPadding.left + contentWidth), (int) (cy + textLayoutHeight / 2f));
             textDrawable.setAlpha((int) (0xFF * alpha));
             textDrawable.draw(canvas);
         }
@@ -696,7 +879,7 @@ public class HintView2 extends View {
 
     @Override
     protected boolean verifyDrawable(@NonNull Drawable who) {
-        return who == textDrawable || who == selectorDrawable || super.verifyDrawable(who);
+        return who == textDrawable || who == selectorDrawable || who == icon || super.verifyDrawable(who);
     }
 
     @Override
@@ -821,4 +1004,47 @@ public class HintView2 extends View {
         }
         return null;
     }
+
+    private boolean drawingMyBlur;
+
+    private void prepareBlur() {
+        if (!useBlur) return;
+
+        drawingMyBlur = true;
+        AndroidUtilities.makeGlobalBlurBitmap(bitmap -> {
+            drawingMyBlur = false;
+            blurBitmapWidth = bitmap.getWidth();
+            blurBitmapHeight = bitmap.getHeight();
+            blurBitmapShader = new BitmapShader(bitmap, Shader.TileMode.CLAMP, Shader.TileMode.CLAMP);
+            blurBitmapMatrix = new Matrix();
+            blurBackgroundPaint = new Paint(Paint.ANTI_ALIAS_FLAG);
+            blurBackgroundPaint.setShader(blurBitmapShader);
+            ColorMatrix colorMatrix = new ColorMatrix();
+            colorMatrix.setSaturation(1.5f);
+            AndroidUtilities.adjustBrightnessColorMatrix(colorMatrix, Theme.isCurrentThemeDark() ? +.12f : -.08f);
+            blurBackgroundPaint.setColorFilter(new ColorMatrixColorFilter(colorMatrix));
+            blurCutPaint = new Paint(Paint.ANTI_ALIAS_FLAG);
+            blurCutPaint.setXfermode(new PorterDuffXfermode(PorterDuff.Mode.DST_IN));
+            blurCutPaint.setPathEffect(new CornerPathEffect(rounding));
+        }, blurScale);
+    }
+
+    private void updateBlurBounds() {
+        if (!useBlur) return;
+        if (blurBitmapShader == null || blurBitmapMatrix == null) return;
+
+        if (blurPos == null) {
+            blurPos = new int[2];
+        }
+        getLocationOnScreen(blurPos);
+        blurBitmapMatrix.reset();
+        blurBitmapMatrix.postScale(AndroidUtilities.displaySize.x / (float) blurBitmapWidth, (AndroidUtilities.displaySize.y + AndroidUtilities.statusBarHeight) / (float) blurBitmapHeight);
+        blurBitmapMatrix.postTranslate(-blurPos[0], -blurPos[1]);
+        if (show.get() < 1 && useScale) {
+            final float scale = 1f / lerp(.5f, 1f, show.get());
+            blurBitmapMatrix.postScale(scale, scale, arrowX, arrowY);
+        }
+        blurBitmapShader.setLocalMatrix(blurBitmapMatrix);
+    }
+
 }

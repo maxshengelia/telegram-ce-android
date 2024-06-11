@@ -142,6 +142,9 @@ public class InviteMembersBottomSheet extends UsersAlertBase implements Notifica
         searchListViewAdapter = searchAdapter = new SearchAdapter();
         listView.setAdapter(listViewAdapter = new ListAdapter());
 
+        emptyView.showProgress(false, false);
+        emptyView.setVisibility(View.GONE);
+
         ArrayList<TLRPC.TL_contact> arrayList = ContactsController.getInstance(account).contacts;
         for (int a = 0; a < arrayList.size(); a++) {
             TLRPC.User user = MessagesController.getInstance(currentAccount).getUser(arrayList.get(a).user_id);
@@ -317,7 +320,7 @@ public class InviteMembersBottomSheet extends UsersAlertBase implements Notifica
                     String countString = String.format("%d", selectedContacts.size());
                     int index = TextUtils.indexOf(spannableStringBuilder, countString);
                     if (index >= 0) {
-                        spannableStringBuilder.setSpan(new TypefaceSpan(AndroidUtilities.getTypeface("fonts/rmedium.ttf")), index, index + countString.length(), Spanned.SPAN_EXCLUSIVE_EXCLUSIVE);
+                        spannableStringBuilder.setSpan(new TypefaceSpan(AndroidUtilities.bold()), index, index + countString.length(), Spanned.SPAN_EXCLUSIVE_EXCLUSIVE);
                     }
                     builder.setMessage(spannableStringBuilder);
                 } else {

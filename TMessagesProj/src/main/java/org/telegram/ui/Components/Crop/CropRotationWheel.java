@@ -124,11 +124,11 @@ public class CropRotationWheel extends FrameLayout {
     }
 
     public void setMirrored(boolean value) {
-        mirrorButton.setColorFilter(value ? new PorterDuffColorFilter(Theme.getColor(Theme.key_dialogFloatingButton), PorterDuff.Mode.MULTIPLY) : null);
+        mirrorButton.setColorFilter(value ? new PorterDuffColorFilter(Theme.getColor(Theme.key_chat_editMediaButton), PorterDuff.Mode.MULTIPLY) : null);
     }
 
     public void setRotated(boolean value) {
-        rotation90Button.setColorFilter(value ? new PorterDuffColorFilter(Theme.getColor(Theme.key_dialogFloatingButton), PorterDuff.Mode.MULTIPLY) : null);
+        rotation90Button.setColorFilter(value ? new PorterDuffColorFilter(Theme.getColor(Theme.key_chat_editMediaButton), PorterDuff.Mode.MULTIPLY) : null);
     }
 
     @Override
@@ -194,7 +194,7 @@ public class CropRotationWheel extends FrameLayout {
                         Math.abs(newAngle - -MAX_ANGLE) < 0.001f && Math.abs(this.rotation - -MAX_ANGLE) >= 0.001f) {
                         performHapticFeedback(HapticFeedbackConstants.KEYBOARD_TAP, HapticFeedbackConstants.FLAG_IGNORE_VIEW_SETTING);
                     } else if (Math.floor(this.rotation / 2.5f) != Math.floor(newAngle / 2.5f)) {
-                        performHapticFeedback(HapticFeedbackConstants.TEXT_HANDLE_MOVE, HapticFeedbackConstants.FLAG_IGNORE_VIEW_SETTING);
+                        AndroidUtilities.vibrateCursor(this);
                     }
                 } catch (Exception ignore) {}
             }

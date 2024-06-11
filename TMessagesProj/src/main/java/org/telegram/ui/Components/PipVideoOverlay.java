@@ -331,10 +331,14 @@ public class PipVideoOverlay {
     }
 
     public static void dismiss(boolean animate) {
-        instance.dismissInternal(animate);
+        instance.dismissInternal(animate, false);
     }
 
-    private void dismissInternal(boolean animate) {
+    public static void dismiss(boolean animate, boolean immediate) {
+        instance.dismissInternal(animate, immediate);
+    }
+
+    private void dismissInternal(boolean animate, boolean immediate) {
         if (isDismissing) {
             return;
         }
@@ -356,7 +360,11 @@ public class PipVideoOverlay {
 
         // Animate is a flag for PhotoViewer transition, not ours
         if (animate || contentView == null) {
-            AndroidUtilities.runOnUIThread(this::onDismissedInternal, 100);
+            if (immediate) {
+                onDismissedInternal();
+            } else {
+                AndroidUtilities.runOnUIThread(this::onDismissedInternal, 100);
+            }
         } else {
             AnimatorSet set = new AnimatorSet();
             set.setDuration(250);
@@ -959,7 +967,7 @@ public class PipVideoOverlay {
                 path.addRoundRect(AndroidUtilities.rectTmp, AndroidUtilities.dp(ROUNDED_CORNERS_DP), AndroidUtilities.dp(ROUNDED_CORNERS_DP), Path.Direction.CW);
             }
         };
-        contentView = new ViewGroup(context) {
+        contentView = new PipVideoViewGroup(context) {
             @Override
             protected void onLayout(boolean changed, int l, int t, int r, int b) {
                 contentFrameLayout.layout(0, 0, pipWidth, pipHeight);
@@ -1230,6 +1238,17 @@ public class PipVideoOverlay {
 
         private float getPipY() {
             return mPrefs.getFloat("y", -1);
+        }
+    }
+
+    public static class PipVideoViewGroup extends ViewGroup {
+        public PipVideoViewGroup(Context context) {
+            super(context);
+        }
+
+        @Override
+        protected void onLayout(boolean changed, int l, int t, int r, int b) {
+
         }
     }
 }

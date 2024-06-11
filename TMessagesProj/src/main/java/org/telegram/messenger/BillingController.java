@@ -5,6 +5,7 @@ import android.content.ActivityNotFoundException;
 import android.content.Context;
 import android.content.Intent;
 import android.net.Uri;
+import android.text.TextUtils;
 
 import androidx.annotation.NonNull;
 import androidx.annotation.Nullable;
@@ -27,6 +28,7 @@ import com.android.billingclient.api.QueryPurchasesParams;
 import org.telegram.messenger.utils.BillingUtilities;
 import org.telegram.tgnet.ConnectionsManager;
 import org.telegram.tgnet.TLRPC;
+import org.telegram.ui.ActionBar.AlertDialog;
 import org.telegram.ui.PremiumPreviewFragment;
 
 import java.text.NumberFormat;
@@ -59,6 +61,7 @@ public class BillingController implements PurchasesUpdatedListener, BillingClien
     private String lastPremiumTransaction;
     private String lastPremiumToken;
     private boolean isDisconnected;
+    private Runnable onCanceled;
 
     public static BillingController getInstance() {
         if (instance == null) {
@@ -74,6 +77,10 @@ public class BillingController implements PurchasesUpdatedListener, BillingClien
                 .build();
     }
 
+    public void setOnCanceled(Runnable onCanceled) {
+        this.onCanceled = onCanceled;
+    }
+
     public String getLastPremiumTransaction() {
         return lastPremiumTransaction;
     }
@@ -87,20 +94,34 @@ public class BillingController implements PurchasesUpdatedListener, BillingClien
     }
 
     public String formatCurrency(long amount, String currency, int exp) {
-        if (currency.isEmpty()) {
+        return formatCurrency(amount, currency, exp, false);
+    }
+
+    private static NumberFormat currencyInstance;
+    public String formatCurrency(long amount, String currency, int exp, boolean rounded) {
+        if (currency == null || currency.isEmpty()) {
             return String.valueOf(amount);
+        }
+        if ("TON".equalsIgnoreCase(currency)) {
+            return "TON " + (amount / 1_000_000_000.0);
         }
         Currency cur = Currency.getInstance(currency);
         if (cur != null) {
-            NumberFormat numberFormat = NumberFormat.getCurrencyInstance();
-            numberFormat.setCurrency(cur);
-            return numberFormat.format(amount / Math.pow(10, exp));
+            if (currencyInstance == null) {
+                currencyInstance = NumberFormat.getCurrencyInstance();
+            }
+            currencyInstance.setCurrency(cur);
+            if (rounded) {
+                return currencyInstance.format(Math.round(amount / Math.pow(10, exp)));
+            }
+            return currencyInstance.format(amount / Math.pow(10, exp));
         }
         return amount + " " + currency;
     }
 
     @SuppressWarnings("ConstantConditions")
     public int getCurrencyExp(String currency) {
+        BillingUtilities.extractCurrencyExp(currencyExpMap);
         return currencyExpMap.getOrDefault(currency, 0);
     }
 
@@ -119,6 +140,14 @@ public class BillingController implements PurchasesUpdatedListener, BillingClien
             return;
         }
         billingClientEmpty = true;
+        NotificationCenter.getGlobalInstance().postNotificationName(NotificationCenter.billingProductDetailsUpdated);
+    }
+
+    private void switchBackFromInvoice() {
+        if (!billingClientEmpty) {
+            return;
+        }
+        billingClientEmpty = false;
         NotificationCenter.getGlobalInstance().postNotificationName(NotificationCenter.billingProductDetailsUpdated);
     }
 
@@ -162,7 +191,7 @@ public class BillingController implements PurchasesUpdatedListener, BillingClien
             return;
         }
 
-        if (paymentPurpose instanceof TLRPC.TL_inputStorePaymentGiftPremium && !checkedConsume) {
+        if ((paymentPurpose instanceof TLRPC.TL_inputStorePaymentGiftPremium || paymentPurpose instanceof TLRPC.TL_inputStorePaymentStars) && !checkedConsume) {
             queryPurchases(BillingClient.ProductType.INAPP, (billingResult, list) -> {
                 if (billingResult.getResponseCode() == BillingClient.BillingResponseCode.OK) {
                     Runnable callback = () -> launchBillingFlow(activity, accountInstance, paymentPurpose, productDetails, subscriptionUpdateParams, true);
@@ -176,7 +205,7 @@ public class BillingController implements PurchasesUpdatedListener, BillingClien
                                 if (purchase.getProducts().contains(productId)) {
                                     productsToBeConsumed.incrementAndGet();
                                     billingClient.consumeAsync(ConsumeParams.newBuilder()
-                                                    .setPurchaseToken(purchase.getPurchaseToken())
+                                            .setPurchaseToken(purchase.getPurchaseToken())
                                             .build(), (billingResult1, s) -> {
                                         if (billingResult1.getResponseCode() == BillingClient.BillingResponseCode.OK) {
                                             productsConsumed.add(productId);
@@ -227,6 +256,10 @@ public class BillingController implements PurchasesUpdatedListener, BillingClien
             if (billing.getResponseCode() == BillingClient.BillingResponseCode.USER_CANCELED) {
                 PremiumPreviewFragment.sentPremiumBuyCanceled();
             }
+            if (onCanceled != null) {
+                onCanceled.run();
+                onCanceled = null;
+            }
             return;
         }
         if (list == null || list.isEmpty()) {
@@ -252,8 +285,13 @@ public class BillingController implements PurchasesUpdatedListener, BillingClien
                     req.receipt.data = purchase.getOriginalJson();
                     req.purpose = payload.second;
 
+                    final AlertDialog progressDialog = new AlertDialog(ApplicationLoader.applicationContext, AlertDialog.ALERT_TYPE_SPINNER);
+                    AndroidUtilities.runOnUIThread(() -> progressDialog.showDelayed(500));
+
                     AccountInstance acc = payload.first;
                     acc.getConnectionsManager().sendRequest(req, (response, error) -> {
+                        AndroidUtilities.runOnUIThread(progressDialog::dismiss);
+
                         requestingTokens.remove(purchase.getPurchaseToken());
 
                         if (response instanceof TLRPC.Updates) {
@@ -268,10 +306,13 @@ public class BillingController implements PurchasesUpdatedListener, BillingClien
 
                             consumeGiftPurchase(purchase, req.purpose);
                         } else if (error != null) {
-                            FileLog.d("Billing: Confirmation Error: " + error.code + " " + error.text);
+                            if (onCanceled != null) {
+                                onCanceled.run();
+                                onCanceled = null;
+                            }
                             NotificationCenter.getGlobalInstance().postNotificationNameOnUIThread(NotificationCenter.billingConfirmPurchaseError, req, error);
                         }
-                    }, ConnectionsManager.RequestFlagFailOnServerErrors | ConnectionsManager.RequestFlagInvokeAfter);
+                    }, ConnectionsManager.RequestFlagFailOnServerErrors | ConnectionsManager.RequestFlagFailOnServerErrorsExceptFloodWait | ConnectionsManager.RequestFlagInvokeAfter);
                 } else {
                     consumeGiftPurchase(purchase, payload.second);
                 }
@@ -284,7 +325,10 @@ public class BillingController implements PurchasesUpdatedListener, BillingClien
      * Without confirmation the user will not be able to buy the product again.
      */
     private void consumeGiftPurchase(Purchase purchase, TLRPC.InputStorePaymentPurpose purpose) {
-        if (purpose instanceof TLRPC.TL_inputStorePaymentGiftPremium) {
+        if (purpose instanceof TLRPC.TL_inputStorePaymentGiftPremium
+                || purpose instanceof TLRPC.TL_inputStorePaymentPremiumGiftCode
+                || purpose instanceof TLRPC.TL_inputStorePaymentStars
+                || purpose instanceof TLRPC.TL_inputStorePaymentPremiumGiveaway) {
             billingClient.consumeAsync(
                     ConsumeParams.newBuilder()
                             .setPurchaseToken(purchase.getPurchaseToken())
@@ -306,34 +350,89 @@ public class BillingController implements PurchasesUpdatedListener, BillingClien
         AndroidUtilities.runOnUIThread(() -> startConnection(), delay);
     }
 
+    private ArrayList<Runnable> setupListeners = new ArrayList<>();
+    public void whenSetuped(Runnable listener) {
+        setupListeners.add(listener);
+    }
+
+    private int triesLeft = 0;
+
     @Override
     public void onBillingSetupFinished(@NonNull BillingResult setupBillingResult) {
         FileLog.d("Billing: Setup finished with result " + setupBillingResult);
         if (setupBillingResult.getResponseCode() == BillingClient.BillingResponseCode.OK) {
             isDisconnected = false;
-            queryProductDetails(Collections.singletonList(PREMIUM_PRODUCT), (billingResult, list) -> {
-                FileLog.d("Billing: Query product details finished " + billingResult + ", " + list);
-                if (billingResult.getResponseCode() == BillingClient.BillingResponseCode.OK) {
-                    for (ProductDetails details : list) {
-                        if (details.getProductId().equals(PREMIUM_PRODUCT_ID)) {
-                            PREMIUM_PRODUCT_DETAILS = details;
-                        }
-                    }
-                    if (PREMIUM_PRODUCT_DETAILS == null) {
-                        switchToInvoice();
-                    } else {
-                        NotificationCenter.getGlobalInstance().postNotificationNameOnUIThread(NotificationCenter.billingProductDetailsUpdated);
-                    }
-                } else {
-                    switchToInvoice();
-                }
-            });
+            triesLeft = 3;
+            try {
+                queryProductDetails(Collections.singletonList(PREMIUM_PRODUCT), this::onQueriedPremiumProductDetails);
+            } catch (Exception e) {
+                FileLog.e(e);
+            }
             queryPurchases(BillingClient.ProductType.INAPP, this::onPurchasesUpdated);
             queryPurchases(BillingClient.ProductType.SUBS, this::onPurchasesUpdated);
+            if (!setupListeners.isEmpty()) {
+                for (int i = 0; i < setupListeners.size(); ++i) {
+                    AndroidUtilities.runOnUIThread(setupListeners.get(i));
+                }
+                setupListeners.clear();
+            }
         } else {
             if (!isDisconnected) {
                 switchToInvoice();
             }
         }
+    }
+
+    private void onQueriedPremiumProductDetails(BillingResult billingResult, List<ProductDetails> list) {
+        FileLog.d("Billing: Query product details finished " + billingResult + ", " + list);
+        if (billingResult.getResponseCode() == BillingClient.BillingResponseCode.OK) {
+            for (ProductDetails details : list) {
+                if (details.getProductId().equals(PREMIUM_PRODUCT_ID)) {
+                    PREMIUM_PRODUCT_DETAILS = details;
+                }
+            }
+            if (PREMIUM_PRODUCT_DETAILS == null) {
+                switchToInvoice();
+            } else {
+                switchBackFromInvoice();
+                NotificationCenter.getGlobalInstance().postNotificationNameOnUIThread(NotificationCenter.billingProductDetailsUpdated);
+            }
+        } else {
+            switchToInvoice();
+            triesLeft--;
+            if (triesLeft > 0) {
+                long delay;
+                if (triesLeft == 2) {
+                    delay = 1000;
+                } else {
+                    delay = 10000;
+                }
+                AndroidUtilities.runOnUIThread(() -> {
+                    try {
+                        queryProductDetails(Collections.singletonList(PREMIUM_PRODUCT), this::onQueriedPremiumProductDetails);
+                    } catch (Exception e) {
+                        FileLog.e(e);
+                    }
+                }, delay);
+            }
+        }
+    }
+
+    public static String getResponseCodeString(int code) {
+        switch (code) {
+            case -3: return "SERVICE_TIMEOUT";
+            case -2: return "FEATURE_NOT_SUPPORTED";
+            case -1: return "SERVICE_DISCONNECTED";
+            case 0: return "OK";
+            case 1: return "USER_CANCELED";
+            case 2: return "SERVICE_UNAVAILABLE";
+            case 3: return "BILLING_UNAVAILABLE";
+            case 4: return "ITEM_UNAVAILABLE";
+            case 5: return "DEVELOPER_ERROR";
+            case 6: return "ERROR";
+            case 7: return "ITEM_ALREADY_OWNED";
+            case 8: return "ITEM_NOT_OWNED";
+        }
+        return null;
     }
 }

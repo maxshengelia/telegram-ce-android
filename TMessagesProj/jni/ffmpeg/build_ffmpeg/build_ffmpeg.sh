@@ -76,6 +76,10 @@ LIBS=" -L${PREFIX}/lib"
 \
 --enable-libvpx \
 --enable-decoder=libvpx_vp9 \
+--enable-encoder=libvpx_vp9 \
+--enable-muxer=matroska \
+--enable-bsf=vp9_superframe \
+--enable-bsf=vp9_raw_reorder \
 --enable-runtime-cpudetect \
 --enable-pthreads \
 --enable-avresample \
@@ -87,10 +91,12 @@ LIBS=" -L${PREFIX}/lib"
 --enable-decoder=gif \
 --enable-decoder=alac \
 --enable-decoder=opus \
+--enable-decoder=mp3 \
 --enable-demuxer=mov \
 --enable-demuxer=gif \
 --enable-demuxer=ogg \
 --enable-demuxer=matroska \
+--enable-demuxer=mp3 \
 --enable-hwaccels \
 --enable-runtime-cpudetect \
 $ADDITIONAL_CONFIGURE_FLAG

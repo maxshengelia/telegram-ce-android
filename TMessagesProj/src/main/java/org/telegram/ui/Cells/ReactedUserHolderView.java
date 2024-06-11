@@ -8,7 +8,10 @@ import android.graphics.Canvas;
 import android.graphics.PorterDuff;
 import android.graphics.PorterDuffColorFilter;
 import android.graphics.drawable.Drawable;
+import android.text.SpannableStringBuilder;
+import android.text.Spanned;
 import android.text.TextUtils;
+import android.text.style.RelativeSizeSpan;
 import android.view.Gravity;
 import android.view.MotionEvent;
 import android.view.View;
@@ -23,6 +26,7 @@ import androidx.recyclerview.widget.RecyclerView;
 import org.telegram.messenger.AndroidUtilities;
 import org.telegram.messenger.DocumentObject;
 import org.telegram.messenger.Emoji;
+import org.telegram.messenger.FileLoader;
 import org.telegram.messenger.ImageLocation;
 import org.telegram.messenger.MediaDataController;
 import org.telegram.messenger.MessageObject;
@@ -33,17 +37,19 @@ import org.telegram.messenger.SvgHelper;
 import org.telegram.messenger.UserObject;
 import org.telegram.tgnet.TLObject;
 import org.telegram.tgnet.TLRPC;
+import org.telegram.tgnet.tl.TL_stories;
 import org.telegram.ui.ActionBar.SimpleTextView;
 import org.telegram.ui.ActionBar.Theme;
 import org.telegram.ui.Components.AnimatedEmojiDrawable;
 import org.telegram.ui.Components.AvatarDrawable;
 import org.telegram.ui.Components.BackupImageView;
 import org.telegram.ui.Components.CubicBezierInterpolator;
+import org.telegram.ui.Components.DotDividerSpan;
 import org.telegram.ui.Components.LayoutHelper;
 import org.telegram.ui.Components.MessageSeenCheckDrawable;
-import org.telegram.ui.Components.Premium.PremiumGradient;
 import org.telegram.ui.Components.Reactions.ReactionsLayoutInBubble;
 import org.telegram.messenger.LocaleController;
+import org.telegram.ui.Components.StatusBadgeComponent;
 import org.telegram.ui.Stories.StoriesUtilities;
 
 public class ReactedUserHolderView extends FrameLayout {
@@ -57,9 +63,11 @@ public class ReactedUserHolderView extends FrameLayout {
     SimpleTextView titleView;
     SimpleTextView subtitleView;
     BackupImageView reactView;
+    public BackupImageView storyPreviewView;
+    public int storyId;
     AvatarDrawable avatarDrawable = new AvatarDrawable();
     View overlaySelectorView;
-    AnimatedEmojiDrawable.SwapAnimatedEmojiDrawable rightDrawable;
+    StatusBadgeComponent statusBadgeComponent;
     public final static int ITEM_HEIGHT_DP = 50;
     public final static int STORY_ITEM_HEIGHT_DP = 58;
     Theme.ResourcesProvider resourcesProvider;
@@ -73,8 +81,14 @@ public class ReactedUserHolderView extends FrameLayout {
 
     public static final MessageSeenCheckDrawable seenDrawable = new MessageSeenCheckDrawable(R.drawable.msg_mini_checks, Theme.key_windowBackgroundWhiteGrayText);
     public static final MessageSeenCheckDrawable reactDrawable = new MessageSeenCheckDrawable(R.drawable.msg_reactions, Theme.key_windowBackgroundWhiteGrayText, 16, 16, 5.66f);
+    public static final MessageSeenCheckDrawable repostDrawable = new MessageSeenCheckDrawable(R.drawable.mini_repost_story, Theme.key_stories_circle1);
+    public static final MessageSeenCheckDrawable forwardDrawable = new MessageSeenCheckDrawable(R.drawable.mini_forward_story, Theme.key_stories_circle1);
 
     public ReactedUserHolderView(int style, int currentAccount, @NonNull Context context, Theme.ResourcesProvider resourcesProvider) {
+        this(style, currentAccount, context, resourcesProvider, true);
+    }
+
+    public ReactedUserHolderView(int style, int currentAccount, @NonNull Context context, Theme.ResourcesProvider resourcesProvider, boolean useOverlaySelector) {
         super(context);
         this.style = style;
         this.currentAccount = currentAccount;
@@ -128,9 +142,9 @@ public class ReactedUserHolderView extends FrameLayout {
         float leftMargin = style == STYLE_STORY ? 73 : 55;
         addView(titleView, LayoutHelper.createFrameRelatively(LayoutHelper.MATCH_PARENT, LayoutHelper.WRAP_CONTENT, Gravity.FILL_HORIZONTAL | Gravity.TOP, leftMargin, topMargin, 12, 0));
 
-        rightDrawable = new AnimatedEmojiDrawable.SwapAnimatedEmojiDrawable(this, AndroidUtilities.dp(18));
+        statusBadgeComponent = new StatusBadgeComponent(this);
         titleView.setDrawablePadding(AndroidUtilities.dp(3));
-        titleView.setRightDrawable(rightDrawable);
+        titleView.setRightDrawable(statusBadgeComponent.getDrawable());
 
         subtitleView = new SimpleTextView(context);
         subtitleView.setTextSize(13);
@@ -144,12 +158,17 @@ public class ReactedUserHolderView extends FrameLayout {
         reactView = new BackupImageView(context);
         addView(reactView, LayoutHelper.createFrameRelatively(24, 24, Gravity.END | Gravity.CENTER_VERTICAL, 0, 0, 12, 0));
 
-        overlaySelectorView = new View(context);
-        overlaySelectorView.setBackground(Theme.getSelectorDrawable(false));
-        addView(overlaySelectorView, LayoutHelper.createFrame(LayoutHelper.MATCH_PARENT, LayoutHelper.MATCH_PARENT));
+        storyPreviewView = new BackupImageView(context);
+        addView(storyPreviewView, LayoutHelper.createFrameRelatively(22, 35, Gravity.END | Gravity.CENTER_VERTICAL, 0, 0, 12, 0));
+
+        if (useOverlaySelector) {
+            overlaySelectorView = new View(context);
+            overlaySelectorView.setBackground(Theme.getSelectorDrawable(false));
+            addView(overlaySelectorView, LayoutHelper.createFrame(LayoutHelper.MATCH_PARENT, LayoutHelper.MATCH_PARENT));
+        }
     }
 
-    public void setUserReaction(TLRPC.User user, TLRPC.Chat chat, TLRPC.Reaction reaction, boolean like, long date, boolean dateIsSeen, boolean animated) {
+    public void setUserReaction(TLRPC.User user, TLRPC.Chat chat, TLRPC.Reaction reaction, boolean like, long date, TL_stories.StoryItem storyItem, boolean isForward, boolean dateIsSeen, boolean animated) {
         TLObject u = user;
         if (u == null) {
             u = chat;
@@ -158,24 +177,15 @@ public class ReactedUserHolderView extends FrameLayout {
             return;
         }
 
-        Long documentId = u instanceof TLRPC.User ? UserObject.getEmojiStatusDocumentId((TLRPC.User) u) : null;
-        if (documentId == null) {
-            if (user != null && user.premium) {
-                rightDrawable.set(PremiumGradient.getInstance().premiumStarDrawableMini, false);
-            } else {
-                rightDrawable.set((Drawable) null, false);
-            }
-        } else {
-            rightDrawable.set(documentId, false);
-        }
-        rightDrawable.setColor(Theme.getColor(Theme.key_windowBackgroundWhiteBlackText, resourcesProvider));
+        int colorFilter = Theme.getColor(style == STYLE_STORY ? Theme.key_windowBackgroundWhiteBlackText : Theme.key_chats_verifiedBackground, resourcesProvider);
+        statusBadgeComponent.updateDrawable(user, chat, colorFilter, false);
 
-        avatarDrawable.setInfo(u);
+        avatarDrawable.setInfo(currentAccount, u);
         if (user != null) {
             dialogId = user.id;
             titleView.setText(UserObject.getUserName(user));
         } else {
-            dialogId = chat.id;
+            dialogId = -chat.id;
             titleView.setText(chat.title);
         }
 
@@ -201,7 +211,7 @@ public class ReactedUserHolderView extends FrameLayout {
             reactView.setImageDrawable(likeDrawableFilled);
             contentDescription = LocaleController.formatString("AccDescrLike", R.string.AccDescrLike);
         } else if (reaction != null) {
-            ReactionsLayoutInBubble.VisibleReaction visibleReaction = ReactionsLayoutInBubble.VisibleReaction.fromTLReaction(reaction);
+            ReactionsLayoutInBubble.VisibleReaction visibleReaction = ReactionsLayoutInBubble.VisibleReaction.fromTL(reaction);
             if (visibleReaction.emojicon != null) {
                 reactView.setAnimatedEmojiDrawable(null);
                 TLRPC.TL_availableReaction r = MediaDataController.getInstance(currentAccount).getReactionsMap().get(visibleReaction.emojicon);
@@ -226,6 +236,24 @@ public class ReactedUserHolderView extends FrameLayout {
             contentDescription = LocaleController.formatString("AccDescrPersonHasSeen", R.string.AccDescrPersonHasSeen, titleView.getText());
         }
 
+        if (storyItem != null) {
+            storyId = storyItem.id;
+            if (storyItem.media != null && storyItem.media.photo != null) {
+                final TLRPC.PhotoSize photoSize = FileLoader.getClosestPhotoSizeWithSize(storyItem.media.photo.sizes, 35, false, null, true);
+                storyPreviewView.setImage(ImageLocation.getForPhoto(photoSize, storyItem.media.photo), "22_35", null, null, -1, storyItem);
+            } else if (storyItem.media != null && storyItem.media.document != null) {
+                final TLRPC.PhotoSize photoSize = FileLoader.getClosestPhotoSizeWithSize(storyItem.media.document.thumbs, 35, false, null, true);
+                storyPreviewView.setImage(ImageLocation.getForDocument(photoSize, storyItem.media.document), "22_35", null, null, -1, storyItem);
+            }
+            storyPreviewView.setRoundRadius(AndroidUtilities.dp(3.33f));
+            if (date <= 0) {
+                date = storyItem.date;
+            }
+        } else {
+            storyId = -1;
+            storyPreviewView.setImageDrawable(null);
+        }
+
         if (date != 0) {
             contentDescription += " " + LocaleController.formatSeenDate(date);
         }
@@ -233,8 +261,41 @@ public class ReactedUserHolderView extends FrameLayout {
 
         if (date != 0) {
             subtitleView.setVisibility(View.VISIBLE);
-            CharSequence icon = dateIsSeen ? seenDrawable.getSpanned(getContext(), resourcesProvider) : reactDrawable.getSpanned(getContext(), resourcesProvider);
-            subtitleView.setText(TextUtils.concat(icon, LocaleController.formatSeenDate(date)));
+            MessageSeenCheckDrawable drawable;
+            if (storyItem != null) {
+                drawable = isForward ? forwardDrawable : repostDrawable;
+            } else if (dateIsSeen) {
+                drawable = seenDrawable;
+            } else {
+                drawable = reactDrawable;
+            }
+            SpannableStringBuilder ssb = new SpannableStringBuilder();
+            ssb.append(drawable.getSpanned(getContext(), resourcesProvider));
+            ssb.append(LocaleController.formatSeenDate(date));
+            if (!isForward && storyItem != null && !TextUtils.isEmpty(storyItem.caption)) {
+                ssb.append(" ");
+                ssb.append(".");
+                DotDividerSpan dotSpan = new DotDividerSpan();
+                dotSpan.setSize(2.33333f);
+                dotSpan.setTopPadding(AndroidUtilities.dp(5));
+                ssb.setSpan(dotSpan, ssb.length() - 1, ssb.length(), Spanned.SPAN_EXCLUSIVE_EXCLUSIVE);
+                ssb.append(" ");
+                int index = ssb.length();
+                ssb.append(LocaleController.getString(R.string.StoryRepostCommented));
+                ssb.setSpan(new RelativeSizeSpan(.95f), index, ssb.length(), Spanned.SPAN_EXCLUSIVE_EXCLUSIVE);
+            } else if (!isForward && storyItem != null && storyItem.fwd_from != null && storyItem.fwd_from.modified) {
+                ssb.append(" ");
+                ssb.append(".");
+                DotDividerSpan dotSpan = new DotDividerSpan();
+                dotSpan.setSize(2.33333f);
+                dotSpan.setTopPadding(AndroidUtilities.dp(5));
+                ssb.setSpan(dotSpan, ssb.length() - 1, ssb.length(), Spanned.SPAN_EXCLUSIVE_EXCLUSIVE);
+                ssb.append(" ");
+                int index = ssb.length();
+                ssb.append("edited");
+                ssb.setSpan(new RelativeSizeSpan(.95f), index, ssb.length(), Spanned.SPAN_EXCLUSIVE_EXCLUSIVE);
+            }
+            subtitleView.setText(ssb);
             subtitleView.setTranslationY(!dateIsSeen ? AndroidUtilities.dp(-1) : 0);
             titleView.setTranslationY(0);
             if (animated) {
@@ -266,7 +327,7 @@ public class ReactedUserHolderView extends FrameLayout {
         } else {
             chat = MessagesController.getInstance(currentAccount).getChat(-dialogId);
         }
-        setUserReaction(user, chat, reaction.reaction, false, reaction.date, reaction.dateIsSeen, false);
+        setUserReaction(user, chat, reaction.reaction, false, reaction.date, null, false, reaction.dateIsSeen, false);
     }
 
     @Override
@@ -284,17 +345,13 @@ public class ReactedUserHolderView extends FrameLayout {
     @Override
     protected void onAttachedToWindow() {
         super.onAttachedToWindow();
-        if (rightDrawable != null) {
-            rightDrawable.attach();
-        }
+        statusBadgeComponent.onAttachedToWindow();
     }
 
     @Override
     protected void onDetachedFromWindow() {
         super.onDetachedFromWindow();
-        if (rightDrawable != null) {
-            rightDrawable.detach();
-        }
+        statusBadgeComponent.onDetachedFromWindow();
         params.onDetachFromWindow();
     }
 

@@ -336,7 +336,7 @@ public class GiftPremiumBottomSheet extends BottomSheetWithRecyclerListView impl
     public void onViewCreated(FrameLayout containerView) {
         super.onViewCreated(containerView);
 
-        premiumButtonView = new PremiumButtonView(getContext(), true);
+        premiumButtonView = new PremiumButtonView(getContext(), true, resourcesProvider);
 
         FrameLayout buttonContainer = new FrameLayout(getContext());
         buttonContainer.addView(premiumButtonView, LayoutHelper.createFrame(LayoutHelper.MATCH_PARENT, 48, Gravity.CENTER_VERTICAL, 16, 0, 16, 0));
@@ -368,7 +368,7 @@ public class GiftPremiumBottomSheet extends BottomSheetWithRecyclerListView impl
     }
 
     @Override
-    protected RecyclerListView.SelectionAdapter createAdapter() {
+    protected RecyclerListView.SelectionAdapter createAdapter(RecyclerListView listView) {
         return new RecyclerListView.SelectionAdapter() {
             private final static int VIEW_TYPE_HEADER = 0,
                     VIEW_TYPE_TIER = 1,

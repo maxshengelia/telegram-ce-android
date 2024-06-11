@@ -50,12 +50,18 @@ import java.util.Set;
 
 public class StickerCategoriesListView extends RecyclerListView {
 
-    @IntDef({CategoriesType.DEFAULT, CategoriesType.STATUS, CategoriesType.PROFILE_PHOTOS})
+    @IntDef({
+        CategoriesType.DEFAULT,
+        CategoriesType.STATUS,
+        CategoriesType.PROFILE_PHOTOS,
+        CategoriesType.STICKERS
+    })
     @Retention(RetentionPolicy.SOURCE)
     public static @interface CategoriesType {
         int DEFAULT = 0;
         int STATUS = 1;
         int PROFILE_PHOTOS = 2;
+        int STICKERS = 3;
     }
 
     private float shownButtonsAtStart = 6.5f;
@@ -98,7 +104,7 @@ public class StickerCategoriesListView extends RecyclerListView {
             if (emojiGroups == null || emojiGroups.groups == null) {
                 return;
             }
-            for (TLRPC.TL_emojiGroup group : emojiGroups.groups) {
+            for (TLRPC.EmojiGroup group : emojiGroups.groups) {
                 AnimatedEmojiDrawable.getDocumentFetcher(account).fetchDocument(group.icon_emoji_id, null);
             }
         });
@@ -150,6 +156,7 @@ public class StickerCategoriesListView extends RecyclerListView {
                     for (int j = 0; j < emojiGroups.groups.size(); ++j) {
                         categories[i + j] = EmojiCategory.remote(emojiGroups.groups.get(j));
                     }
+                    categories = preprocessCategories(categories);
                     adapter.notifyDataSetChanged();
                     setCategoriesShownT(0);
                     updateCategoriesShown(categoriesShouldShow, System.currentTimeMillis() - start > 16);
@@ -157,6 +164,10 @@ public class StickerCategoriesListView extends RecyclerListView {
                 NotificationCenter.getInstance(UserConfig.selectedAccount).doOnIdle(action);
             }
         });
+    }
+
+    protected EmojiCategory[] preprocessCategories(StickerCategoriesListView.EmojiCategory[] categories) {
+        return categories;
     }
 
     public void setShownButtonsAtStart(float buttonsCount) {
@@ -179,6 +190,9 @@ public class StickerCategoriesListView extends RecyclerListView {
         } else if (view.getLeft() < minimumPadding) {
             smoothScrollBy(-(minimumPadding - view.getLeft()), 0, CubicBezierInterpolator.EASE_OUT_QUINT);
         }
+//        if (view instanceof CategoryButton) {
+//            ((CategoryButton) view).play(true);
+//        }
         if (onCategoryClick != null) {
             onCategoryClick.run(category);
         }
@@ -307,7 +321,7 @@ public class StickerCategoriesListView extends RecyclerListView {
                 int position = getChildAdapterPosition(child);
                 float childT = AndroidUtilities.cascade(t, getChildCount() - 1 - position, getChildCount() - 1, 3f);
                 if (childT > 0 && child.getAlpha() <= 0) {
-                    ((CategoryButton) child).play();
+                    ((CategoryButton) child).play(false);
                 }
                 child.setAlpha(childT);
                 child.setScaleX(childT);
@@ -444,7 +458,7 @@ public class StickerCategoriesListView extends RecyclerListView {
 //        }
     }
 
-    private RectF rect1 = new RectF(), rect2 = new RectF(), rect3 = new RectF();
+    private final RectF rect1 = new RectF(), rect2 = new RectF(), rect3 = new RectF();
     private void drawSelectedHighlight(Canvas canvas) {
         float alpha = selectedAlpha.set(selectedCategoryIndex >= 0 ? 1 : 0);
         float index = selectedCategoryIndex >= 0 ? selectedIndex.set(selectedCategoryIndex) : selectedIndex.get();
@@ -558,7 +572,7 @@ public class StickerCategoriesListView extends RecyclerListView {
                 button.setAlpha(categoriesShownT);
                 button.setScaleX(categoriesShownT);
                 button.setScaleY(categoriesShownT);
-                button.play();
+                button.play(false);
             }
         }
 
@@ -568,7 +582,7 @@ public class StickerCategoriesListView extends RecyclerListView {
                 final CategoryButton button = (CategoryButton) holder.itemView;
                 final int position = holder.getAdapterPosition();
                 button.setSelected(selectedCategoryIndex == position - 1, false);
-                button.play();
+                button.play(false);
             }
         }
 
@@ -598,7 +612,7 @@ public class StickerCategoriesListView extends RecyclerListView {
     }
 
     protected boolean isTabIconsAnimationEnabled(boolean loaded) {
-        return LiteMode.isEnabled(LiteMode.FLAG_ANIMATED_EMOJI_KEYBOARD) && !loaded;
+        return LiteMode.isEnabled(LiteMode.FLAG_ANIMATED_EMOJI_KEYBOARD);
     }
 
     static int loadedCategoryIcons = 0;
@@ -756,8 +770,8 @@ public class StickerCategoriesListView extends RecyclerListView {
         }
 
         private long lastPlayed;
-        public void play() {
-            if (System.currentTimeMillis() - lastPlayed > 250) {
+        public void play(boolean force) {
+            if (System.currentTimeMillis() - lastPlayed > 250 || force) {
                 lastPlayed = System.currentTimeMillis();
                 RLottieDrawable drawable = getAnimatedDrawable();
                 if (drawable == null && getImageReceiver() != null) {
@@ -829,6 +843,8 @@ public class StickerCategoriesListView extends RecyclerListView {
         public boolean animated;
         public int iconResId;
         public String emojis;
+        public boolean premium;
+        public boolean greeting;
 
         public boolean remote;
         public long documentId;
@@ -851,11 +867,17 @@ public class StickerCategoriesListView extends RecyclerListView {
             return category;
         }
 
-        public static EmojiCategory remote(TLRPC.TL_emojiGroup group) {
+        public static EmojiCategory remote(TLRPC.EmojiGroup group) {
             EmojiCategory category = new EmojiCategory();
             category.remote = true;
             category.documentId = group.icon_emoji_id;
-            category.emojis = TextUtils.concat(group.emoticons.toArray(new String[0])).toString();
+            if (group instanceof TLRPC.TL_emojiGroupPremium) {
+                category.emojis = "premium";
+                category.premium = true;
+            } else {
+                category.emojis = TextUtils.concat(group.emoticons.toArray(new String[0])).toString();
+            }
+            category.greeting = group instanceof TLRPC.TL_emojiGroupGreeting;
             category.title = group.title;
             return category;
         }
@@ -872,6 +894,9 @@ public class StickerCategoriesListView extends RecyclerListView {
             } else if (type == CategoriesType.PROFILE_PHOTOS) {
                 req = new TLRPC.TL_messages_getEmojiProfilePhotoGroups();
                 ((TLRPC.TL_messages_getEmojiProfilePhotoGroups) req).hash = (int) hash;
+            } else if (type == CategoriesType.STICKERS) {
+                req = new TLRPC.TL_messages_getEmojiStickerGroups();
+                ((TLRPC.TL_messages_getEmojiStickerGroups) req).hash = (int) hash;
             } else {
                 req = new TLRPC.TL_messages_getEmojiGroups();
                 ((TLRPC.TL_messages_getEmojiGroups) req).hash = (int) hash;

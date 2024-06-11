@@ -1,6 +1,8 @@
 package org.telegram.messenger;
 
 import static org.telegram.messenger.NotificationsController.TYPE_PRIVATE;
+import static org.telegram.messenger.NotificationsController.TYPE_REACTIONS_MESSAGES;
+import static org.telegram.messenger.NotificationsController.TYPE_REACTIONS_STORIES;
 
 import android.content.SharedPreferences;
 
@@ -24,13 +26,13 @@ public class NotificationsSettingsFacade {
     }
 
 
-    public boolean isDefault(long dialogId, int topicId) {
-        String key = NotificationsController.getSharedPrefKey(dialogId, topicId);
+    public boolean isDefault(long dialogId, long topicId) {
+        String key = NotificationsController.getSharedPrefKey(dialogId, topicId, true);
         return false;
     }
 
-    public void clearPreference(long dialogId, int topicId) {
-        String key = NotificationsController.getSharedPrefKey(dialogId, topicId);
+    public void clearPreference(long dialogId, long topicId) {
+        String key = NotificationsController.getSharedPrefKey(dialogId, topicId, true);
         getPreferences().edit()
                 .remove(PROPERTY_NOTIFY + key)
                 .remove(PROPERTY_CUSTOM + key)
@@ -43,25 +45,25 @@ public class NotificationsSettingsFacade {
     }
 
 
-    public int getProperty(String property, long dialogId, int topicId, int defaultValue) {
-        String key = NotificationsController.getSharedPrefKey(dialogId, topicId);
+    public int getProperty(String property, long dialogId, long topicId, int defaultValue) {
+        String key = NotificationsController.getSharedPrefKey(dialogId, topicId, true);
         if (getPreferences().contains(property + key)) {
             return getPreferences().getInt(property + key, defaultValue);
         }
-        key = NotificationsController.getSharedPrefKey(dialogId, 0);
+        key = NotificationsController.getSharedPrefKey(dialogId, 0, true);
         return getPreferences().getInt(property + key, defaultValue);
     }
 
-    public long getProperty(String property, long dialogId, int topicId, long defaultValue) {
-        String key = NotificationsController.getSharedPrefKey(dialogId, topicId);
+    public long getProperty(String property, long dialogId, long topicId, long defaultValue) {
+        String key = NotificationsController.getSharedPrefKey(dialogId, topicId, true);
         if (getPreferences().contains(property + key)) {
             return getPreferences().getLong(property + key, defaultValue);
         }
-        key = NotificationsController.getSharedPrefKey(dialogId, 0);
+        key = NotificationsController.getSharedPrefKey(dialogId, 0, true);
         return getPreferences().getLong(property + key, defaultValue);
     }
 
-    public boolean getProperty(String property, long dialogId, int topicId, boolean defaultValue) {
+    public boolean getProperty(String property, long dialogId, long topicId, boolean defaultValue) {
         String key = NotificationsController.getSharedPrefKey(dialogId, topicId);
         if (getPreferences().contains(property + key)) {
             return getPreferences().getBoolean(property + key, defaultValue);
@@ -70,7 +72,7 @@ public class NotificationsSettingsFacade {
         return getPreferences().getBoolean(property + key, defaultValue);
     }
 
-    public String getPropertyString(String property, long dialogId, int topicId, String defaultValue) {
+    public String getPropertyString(String property, long dialogId, long topicId, String defaultValue) {
         String key = NotificationsController.getSharedPrefKey(dialogId, topicId);
         if (getPreferences().contains(property + key)) {
             return getPreferences().getString(property + key, defaultValue);
@@ -80,7 +82,7 @@ public class NotificationsSettingsFacade {
     }
 
 
-    public void removeProperty(String property, long dialogId, int topicId) {
+    public void removeProperty(String property, long dialogId, long topicId) {
         String key = NotificationsController.getSharedPrefKey(dialogId, topicId);
         getPreferences().edit().remove(property + key).apply();
     }
@@ -89,12 +91,12 @@ public class NotificationsSettingsFacade {
         return MessagesController.getNotificationsSettings(currentAccount);
     }
 
-    public void applyDialogNotificationsSettings(long dialogId, int topicId, TLRPC.PeerNotifySettings notify_settings) {
+    public void applyDialogNotificationsSettings(long dialogId, long topicId, TLRPC.PeerNotifySettings notify_settings) {
         if (notify_settings == null) {
             return;
         }
         Utilities.globalQueue.postRunnable(() -> {
-            String key = NotificationsController.getSharedPrefKey(dialogId, topicId);
+            String key = NotificationsController.getSharedPrefKey(dialogId, topicId, true);
             MessagesController messagesController = MessagesController.getInstance(currentAccount);
             ConnectionsManager connectionsManager = ConnectionsManager.getInstance(currentAccount);
             MessagesStorage messagesStorage = MessagesStorage.getInstance(currentAccount);
@@ -183,7 +185,7 @@ public class NotificationsSettingsFacade {
         });
     }
 
-    public void applySoundSettings(TLRPC.NotificationSound settings, SharedPreferences.Editor editor, long dialogId, int topicId, int globalType, boolean serverUpdate) {
+    public void applySoundSettings(TLRPC.NotificationSound settings, SharedPreferences.Editor editor, long dialogId, long topicId, int globalType, boolean serverUpdate) {
         if (settings == null) {
             return;
         }
@@ -191,7 +193,7 @@ public class NotificationsSettingsFacade {
         String soundPathPref;
         String soundDocPref;
         if (dialogId != 0) {
-            String key = NotificationsController.getSharedPrefKey(dialogId, topicId);
+            String key = NotificationsController.getSharedPrefKey(dialogId, topicId, true);
             soundPref = "sound_" + key;
             soundPathPref = "sound_path_" + key;
             soundDocPref = "sound_document_id_" + key;
@@ -208,6 +210,10 @@ public class NotificationsSettingsFacade {
                 soundPref = "GlobalSound";
                 soundDocPref = "GlobalSoundDocId";
                 soundPathPref = "GlobalSoundPath";
+            } else if (globalType == TYPE_REACTIONS_MESSAGES || globalType == TYPE_REACTIONS_STORIES) {
+                soundPref = "ReactionSound";
+                soundDocPref = "ReactionSoundDocId";
+                soundPathPref = "ReactionSoundPath";
             } else {
                 soundPref = "ChannelSound";
                 soundDocPref = "ChannelSoundDocId";
@@ -256,8 +262,7 @@ public class NotificationsSettingsFacade {
         }
     }
 
-    public void setSettingsForDialog(TLRPC.Dialog dialog, TLRPC.PeerNotifySettings notify_settings) {
-        SharedPreferences.Editor editor = getPreferences().edit();
+    public void setSettingsForDialog(SharedPreferences.Editor editor, TLRPC.Dialog dialog, TLRPC.PeerNotifySettings notify_settings) {
         long dialogId = MessageObject.getPeerId(dialog.peer);
 
         if ((dialog.notify_settings.flags & 2) != 0) {
@@ -281,7 +286,5 @@ public class NotificationsSettingsFacade {
         } else {
             editor.remove(PROPERTY_NOTIFY + dialogId);
         }
-
-        editor.apply();
     }
 }

@@ -12,6 +12,7 @@ import android.animation.Animator;
 import android.animation.AnimatorListenerAdapter;
 import android.animation.AnimatorSet;
 import android.animation.ObjectAnimator;
+import android.app.Activity;
 import android.app.Dialog;
 import android.content.Context;
 import android.content.DialogInterface;
@@ -54,23 +55,22 @@ import androidx.annotation.Nullable;
 import androidx.core.graphics.ColorUtils;
 
 import org.telegram.messenger.AndroidUtilities;
-import org.telegram.messenger.Emoji;
 import org.telegram.messenger.FileLog;
 import org.telegram.messenger.LiteMode;
 import org.telegram.messenger.LocaleController;
 import org.telegram.messenger.NotificationCenter;
 import org.telegram.messenger.R;
 import org.telegram.messenger.SharedConfig;
+import org.telegram.messenger.Utilities;
+import org.telegram.ui.Components.AnimatedEmojiDrawable;
 import org.telegram.ui.Components.AnimatedFloat;
 import org.telegram.ui.Components.EffectsTextView;
 import org.telegram.ui.Components.LayoutHelper;
 import org.telegram.ui.Components.LineProgressView;
-import org.telegram.ui.Components.LinkSpanDrawable;
 import org.telegram.ui.Components.RLottieDrawable;
 import org.telegram.ui.Components.RLottieImageView;
 import org.telegram.ui.Components.RadialProgressView;
 import org.telegram.ui.Components.spoilers.SpoilersTextView;
-import org.telegram.ui.LaunchActivity;
 
 import java.util.ArrayList;
 import java.util.Map;
@@ -81,9 +81,13 @@ public class AlertDialog extends Dialog implements Drawable.Callback, Notificati
     public static final int ALERT_TYPE_LOADING = 2;
     public static final int ALERT_TYPE_SPINNER = 3;
 
+    private int customWidth = -1;
+    private boolean customMaxHeight;
     private View customView;
+    private View bottomView;
+    private View aboveMessageView;
     private int customViewHeight = LayoutHelper.WRAP_CONTENT;
-    private TextView titleTextView;
+    private SpoilersTextView titleTextView;
     private TextView secondTitleTextView;
     private TextView subtitleTextView;
     private TextView messageTextView;
@@ -108,6 +112,7 @@ public class AlertDialog extends Dialog implements Drawable.Callback, Notificati
 
     private OnClickListener onClickListener;
     private OnDismissListener onDismissListener;
+    private Utilities.Callback<Runnable> overridenDissmissListener;
 
     private CharSequence[] items;
     private int[] itemIcons;
@@ -195,8 +200,8 @@ public class AlertDialog extends Dialog implements Drawable.Callback, Notificati
         this.blurredBackground = blurBackground;
     }
 
-    private boolean supportsNativeBlur() {
-        return Build.VERSION.SDK_INT >= Build.VERSION_CODES.S && LaunchActivity.systemBlurEnabled;
+    protected boolean supportsNativeBlur() {
+        return false; // Build.VERSION.SDK_INT >= Build.VERSION_CODES.S && LaunchActivity.systemBlurEnabled;
     }
 
     public void redPositive() {
@@ -292,6 +297,7 @@ public class AlertDialog extends Dialog implements Drawable.Callback, Notificati
 
     @Override
     public void show() {
+        if (!AndroidUtilities.isSafeToShow(getContext())) return;
         super.show();
         if (progressViewContainer != null && progressViewStyle == ALERT_TYPE_SPINNER) {
             progressViewContainer.setScaleX(0);
@@ -305,10 +311,7 @@ public class AlertDialog extends Dialog implements Drawable.Callback, Notificati
         shownAt = System.currentTimeMillis();
     }
 
-    @Override
-    protected void onCreate(Bundle savedInstanceState) {
-        super.onCreate(savedInstanceState);
-
+    protected View inflateContent(boolean setContent) {
         LinearLayout containerView = new LinearLayout(getContext()) {
 
             private boolean inLayout;
@@ -340,6 +343,11 @@ public class AlertDialog extends Dialog implements Drawable.Callback, Notificati
                     inLayout = true;
                     int width = MeasureSpec.getSize(widthMeasureSpec);
                     int height = MeasureSpec.getSize(heightMeasureSpec);
+
+                    if (customWidth > 0) {
+                        width = customWidth + backgroundPaddings.left + backgroundPaddings.right;
+                    }
+
                     int maxContentHeight;
                     int availableHeight = maxContentHeight = height - getPaddingTop() - getPaddingBottom();
                     int availableWidth = width - getPaddingLeft() - getPaddingRight();
@@ -594,7 +602,15 @@ public class AlertDialog extends Dialog implements Drawable.Callback, Notificati
             }
         }
         containerView.setFitsSystemWindows(Build.VERSION.SDK_INT >= 21);
-        setContentView(containerView);
+        if (setContent) {
+            if (customWidth > 0) {
+                FrameLayout.LayoutParams lp = new FrameLayout.LayoutParams(ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT);
+                lp.gravity = Gravity.CENTER;
+                setContentView(containerView, lp);
+            } else {
+                setContentView(containerView);
+            }
+        }
 
         final boolean hasButtons = positiveButtonText != null || negativeButtonText != null || neutralButtonText != null;
 
@@ -665,10 +681,12 @@ public class AlertDialog extends Dialog implements Drawable.Callback, Notificati
             containerView.addView(titleContainer, LayoutHelper.createLinear(LayoutHelper.WRAP_CONTENT, LayoutHelper.WRAP_CONTENT, topAnimationIsNew ? Gravity.CENTER_HORIZONTAL : 0, 24, 0, 24, 0));
 
             titleTextView = new SpoilersTextView(getContext(), false);
+            NotificationCenter.listenEmojiLoading(titleTextView);
+            titleTextView.cacheType = AnimatedEmojiDrawable.CACHE_TYPE_ALERT_PREVIEW;
             titleTextView.setText(title);
             titleTextView.setTextColor(getThemedColor(Theme.key_dialogTextBlack));
             titleTextView.setTextSize(TypedValue.COMPLEX_UNIT_DIP, 20);
-            titleTextView.setTypeface(AndroidUtilities.getTypeface("fonts/rmedium.ttf"));
+            titleTextView.setTypeface(AndroidUtilities.bold());
             titleTextView.setGravity((topAnimationIsNew ? Gravity.CENTER_HORIZONTAL : LocaleController.isRTL ? Gravity.RIGHT : Gravity.LEFT) | Gravity.TOP);
             titleContainer.addView(titleTextView, LayoutHelper.createFrame(LayoutHelper.WRAP_CONTENT, LayoutHelper.WRAP_CONTENT, (topAnimationIsNew ? Gravity.CENTER_HORIZONTAL : LocaleController.isRTL ? Gravity.RIGHT : Gravity.LEFT) | Gravity.TOP, 0, 19, 0, topAnimationIsNew ? 4 : (subtitle != null ? 2 : (items != null ? 14 : 10))));
         }
@@ -744,7 +762,7 @@ public class AlertDialog extends Dialog implements Drawable.Callback, Notificati
             containerView.addView(lineProgressView, LayoutHelper.createLinear(LayoutHelper.MATCH_PARENT, 4, Gravity.LEFT | Gravity.CENTER_VERTICAL, 24, 0, 24, 0));
 
             lineProgressViewPercent = new TextView(getContext());
-            lineProgressViewPercent.setTypeface(AndroidUtilities.getTypeface("fonts/rmedium.ttf"));
+            lineProgressViewPercent.setTypeface(AndroidUtilities.bold());
             lineProgressViewPercent.setGravity((LocaleController.isRTL ? Gravity.RIGHT : Gravity.LEFT) | Gravity.TOP);
             lineProgressViewPercent.setTextColor(getThemedColor(Theme.key_dialogTextGray2));
             lineProgressViewPercent.setTextSize(TypedValue.COMPLEX_UNIT_DIP, 14);
@@ -766,7 +784,13 @@ public class AlertDialog extends Dialog implements Drawable.Callback, Notificati
             progressView.setProgressColor(getThemedColor(Theme.key_dialog_inlineProgress));
             progressViewContainer.addView(progressView, LayoutHelper.createFrame(86, 86, Gravity.CENTER));
         } else {
+            if (aboveMessageView != null) {
+                scrollContainer.addView(aboveMessageView, LayoutHelper.createLinear(LayoutHelper.MATCH_PARENT, LayoutHelper.WRAP_CONTENT, 22, 4, 22, 12));
+            }
             scrollContainer.addView(messageTextView, LayoutHelper.createLinear(LayoutHelper.WRAP_CONTENT, LayoutHelper.WRAP_CONTENT, (topAnimationIsNew ? Gravity.CENTER_HORIZONTAL : LocaleController.isRTL ? Gravity.RIGHT : Gravity.LEFT) | Gravity.TOP, 24, 0, 24, customView != null || items != null ? customViewOffset : 0));
+            if (bottomView != null) {
+                scrollContainer.addView(bottomView, LayoutHelper.createLinear(LayoutHelper.MATCH_PARENT, LayoutHelper.WRAP_CONTENT, 22, 12, 22, 0));
+            }
         }
         if (!TextUtils.isEmpty(message)) {
             messageTextView.setText(message);
@@ -904,7 +928,12 @@ public class AlertDialog extends Dialog implements Drawable.Callback, Notificati
                     }
                 };
             }
-            buttonsLayout.setPadding(AndroidUtilities.dp(8), AndroidUtilities.dp(8), AndroidUtilities.dp(8), AndroidUtilities.dp(8));
+            if(bottomView != null) {
+                buttonsLayout.setPadding(AndroidUtilities.dp(16), 0, AndroidUtilities.dp(16), AndroidUtilities.dp(4));
+                buttonsLayout.setTranslationY(-AndroidUtilities.dp(6));
+            } else {
+                buttonsLayout.setPadding(AndroidUtilities.dp(8), AndroidUtilities.dp(8), AndroidUtilities.dp(8), AndroidUtilities.dp(8));
+            }
             containerView.addView(buttonsLayout, LayoutHelper.createLinear(LayoutHelper.MATCH_PARENT, 52));
             if (topAnimationIsNew) {
                 buttonsLayout.setTranslationY(-AndroidUtilities.dp(8));
@@ -929,7 +958,7 @@ public class AlertDialog extends Dialog implements Drawable.Callback, Notificati
                 textView.setTextSize(TypedValue.COMPLEX_UNIT_DIP, 16);
                 textView.setTextColor(getThemedColor(dialogButtonColorKey));
                 textView.setGravity(Gravity.CENTER);
-                textView.setTypeface(AndroidUtilities.getTypeface("fonts/rmedium.ttf"));
+                textView.setTypeface(AndroidUtilities.bold());
 //                textView.setLines(1);
 //                textView.setSingleLine(true); //TODO
                 textView.setText(positiveButtonText.toString());
@@ -969,7 +998,7 @@ public class AlertDialog extends Dialog implements Drawable.Callback, Notificati
                 textView.setTextSize(TypedValue.COMPLEX_UNIT_DIP, 16);
                 textView.setTextColor(getThemedColor(dialogButtonColorKey));
                 textView.setGravity(Gravity.CENTER);
-                textView.setTypeface(AndroidUtilities.getTypeface("fonts/rmedium.ttf"));
+                textView.setTypeface(AndroidUtilities.bold());
                 textView.setEllipsize(TextUtils.TruncateAt.END);
                 textView.setSingleLine(true);
                 textView.setText(negativeButtonText.toString());
@@ -1009,7 +1038,7 @@ public class AlertDialog extends Dialog implements Drawable.Callback, Notificati
                 textView.setTextSize(TypedValue.COMPLEX_UNIT_DIP, 16);
                 textView.setTextColor(getThemedColor(dialogButtonColorKey));
                 textView.setGravity(Gravity.CENTER);
-                textView.setTypeface(AndroidUtilities.getTypeface("fonts/rmedium.ttf"));
+                textView.setTypeface(AndroidUtilities.bold());
                 textView.setEllipsize(TextUtils.TruncateAt.END);
                 textView.setSingleLine(true);
                 textView.setText(neutralButtonText.toString());
@@ -1111,6 +1140,13 @@ public class AlertDialog extends Dialog implements Drawable.Callback, Notificati
 
         window.setAttributes(params);
 
+        return containerView;
+    }
+
+    @Override
+    public void onCreate(Bundle savedInstanceState) {
+        super.onCreate(savedInstanceState);
+        inflateContent(true);
         NotificationCenter.getGlobalInstance().addObserver(this, NotificationCenter.emojiLoaded);
     }
 
@@ -1152,6 +1188,21 @@ public class AlertDialog extends Dialog implements Drawable.Callback, Notificati
         }
         if (messageTextView != null) {
             messageTextView.setTextColor(color);
+        }
+    }
+
+    public void setTextSize(int titleSizeDp, int messageSizeDp) {
+        if (titleTextView != null) {
+            titleTextView.setTextSize(TypedValue.COMPLEX_UNIT_DIP, titleSizeDp);
+        }
+        if (messageTextView != null) {
+            messageTextView.setTextSize(TypedValue.COMPLEX_UNIT_DIP, messageSizeDp);
+        }
+    }
+
+    public void setMessageLineSpacing(float spaceDp) {
+        if (messageTextView != null) {
+            messageTextView.setLineSpacing(AndroidUtilities.dp(spaceDp), 1.0f);
         }
     }
 
@@ -1271,6 +1322,12 @@ public class AlertDialog extends Dialog implements Drawable.Callback, Notificati
 
     @Override
     public void dismiss() {
+        if (overridenDissmissListener != null) {
+            Utilities.Callback<Runnable> listener = overridenDissmissListener;
+            overridenDissmissListener = null;
+            listener.run(this::dismiss);
+            return;
+        }
         NotificationCenter.getGlobalInstance().removeObserver(this, NotificationCenter.emojiLoaded);
         if (onDismissListener != null) {
             onDismissListener.onDismiss(this);
@@ -1464,7 +1521,11 @@ public class AlertDialog extends Dialog implements Drawable.Callback, Notificati
         }
 
         public Builder(Context context, int progressViewStyle, Theme.ResourcesProvider resourcesProvider) {
-            alertDialog = new AlertDialog(context, progressViewStyle, resourcesProvider);
+            alertDialog = createAlertDialog(context, progressViewStyle, resourcesProvider);
+        }
+
+        protected AlertDialog createAlertDialog(Context context, int progressViewStyle, Theme.ResourcesProvider resourcesProvider) {
+            return new AlertDialog(context, progressViewStyle, resourcesProvider);
         }
 
         public Context getContext() {
@@ -1501,6 +1562,21 @@ public class AlertDialog extends Dialog implements Drawable.Callback, Notificati
         public Builder setView(View view, int height) {
             alertDialog.customView = view;
             alertDialog.customViewHeight = height;
+            return this;
+        }
+
+        public Builder setWidth(int width) {
+            alertDialog.customWidth = width;
+            return this;
+        }
+
+        public Builder aboveMessageView(View view) {
+            alertDialog.aboveMessageView = view;
+            return this;
+        }
+
+        public Builder addBottomView(View view) {
+            alertDialog.bottomView = view;
             return this;
         }
 
@@ -1647,6 +1723,11 @@ public class AlertDialog extends Dialog implements Drawable.Callback, Notificati
             return this;
         }
 
+        public Builder overrideDismissListener(Utilities.Callback<Runnable> overridenDissmissListener) {
+            alertDialog.overridenDissmissListener = overridenDissmissListener;
+            return this;
+        }
+
         public Builder setBlurredBackground(boolean b) {
             alertDialog.blurredBackground = b;
             return this;
@@ -1654,6 +1735,11 @@ public class AlertDialog extends Dialog implements Drawable.Callback, Notificati
 
         public Builder setAdditionalHorizontalPadding(int padding) {
             alertDialog.additioanalHorizontalPadding = padding;
+            return this;
+        }
+
+        public Builder makeCustomMaxHeight() {
+            alertDialog.customMaxHeight = true;
             return this;
         }
     }

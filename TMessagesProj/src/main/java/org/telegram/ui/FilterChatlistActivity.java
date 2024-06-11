@@ -60,6 +60,7 @@ import org.telegram.messenger.UserObject;
 import org.telegram.messenger.Utilities;
 import org.telegram.tgnet.TLObject;
 import org.telegram.tgnet.TLRPC;
+import org.telegram.tgnet.tl.TL_chatlists;
 import org.telegram.ui.ActionBar.ActionBar;
 import org.telegram.ui.ActionBar.ActionBarMenu;
 import org.telegram.ui.ActionBar.ActionBarMenuItem;
@@ -95,7 +96,7 @@ public class FilterChatlistActivity extends BaseFragment {
     private ListAdapter adapter;
 
     MessagesController.DialogFilter filter;
-    TLRPC.TL_exportedChatlistInvite invite;
+    TL_chatlists.TL_exportedChatlistInvite invite;
 
     private static final int MAX_NAME_LENGTH = 32;
 
@@ -109,21 +110,21 @@ public class FilterChatlistActivity extends BaseFragment {
     private int shiftDp = -5;
     private long lastClickedDialogId, lastClicked;
 
-    public FilterChatlistActivity(MessagesController.DialogFilter filter, TLRPC.TL_exportedChatlistInvite invite) {
+    public FilterChatlistActivity(MessagesController.DialogFilter filter, TL_chatlists.TL_exportedChatlistInvite invite) {
         super();
 
         this.filter = filter;
         this.invite = invite;
     }
 
-    private Utilities.Callback<TLRPC.TL_exportedChatlistInvite> onDelete;
-    private Utilities.Callback<TLRPC.TL_exportedChatlistInvite> onEdit;
+    private Utilities.Callback<TL_chatlists.TL_exportedChatlistInvite> onDelete;
+    private Utilities.Callback<TL_chatlists.TL_exportedChatlistInvite> onEdit;
 
-    public void setOnDelete(Utilities.Callback<TLRPC.TL_exportedChatlistInvite> onDelete) {
+    public void setOnDelete(Utilities.Callback<TL_chatlists.TL_exportedChatlistInvite> onDelete) {
         this.onDelete = onDelete;
     }
 
-    public void setOnEdit(Utilities.Callback<TLRPC.TL_exportedChatlistInvite> onEdit) {
+    public void setOnEdit(Utilities.Callback<TL_chatlists.TL_exportedChatlistInvite> onEdit) {
         this.onEdit = onEdit;
     }
 
@@ -193,7 +194,7 @@ public class FilterChatlistActivity extends BaseFragment {
                     ((GroupCreateUserCell) view).setChecked(false, true);
                 } else if (allowedPeers.contains(did)) {
                     if (selectedPeers.size() + 1 > getMaxChats()) {
-                        showDialog(new LimitReachedBottomSheet(this, getContext(), LimitReachedBottomSheet.TYPE_CHATS_IN_FOLDER, currentAccount));
+                        showDialog(new LimitReachedBottomSheet(this, getContext(), LimitReachedBottomSheet.TYPE_CHATS_IN_FOLDER, currentAccount, null));
                         return;
                     }
                     selectedPeers.add(did);
@@ -324,8 +325,8 @@ public class FilterChatlistActivity extends BaseFragment {
             invite.peers.add(getMessagesController().getPeer(selectedPeers.get(i)));
         }
 
-        TLRPC.TL_chatlists_editExportedInvite req = new TLRPC.TL_chatlists_editExportedInvite();
-        req.chatlist = new TLRPC.TL_inputChatlistDialogFilter();
+        TL_chatlists.TL_chatlists_editExportedInvite req = new TL_chatlists.TL_chatlists_editExportedInvite();
+        req.chatlist = new TL_chatlists.TL_inputChatlistDialogFilter();
         req.chatlist.filter_id = filter.id;
         req.slug = getSlug();
         req.revoked = invite.revoked;
@@ -337,11 +338,11 @@ public class FilterChatlistActivity extends BaseFragment {
             updateDoneProgress(false);
             saving = false;
             if (err != null && "INVITES_TOO_MUCH".equals(err.text)) {
-                showDialog(new LimitReachedBottomSheet(this, getContext(), LimitReachedBottomSheet.TYPE_FOLDER_INVITES, currentAccount));
+                showDialog(new LimitReachedBottomSheet(this, getContext(), LimitReachedBottomSheet.TYPE_FOLDER_INVITES, currentAccount, null));
             } else if (err != null && "INVITE_PEERS_TOO_MUCH".equals(err.text)) {
-                showDialog(new LimitReachedBottomSheet(this, getContext(), LimitReachedBottomSheet.TYPE_CHATS_IN_FOLDER, currentAccount));
+                showDialog(new LimitReachedBottomSheet(this, getContext(), LimitReachedBottomSheet.TYPE_CHATS_IN_FOLDER, currentAccount, null));
             } else if (err != null && "CHATLISTS_TOO_MUCH".equals(err.text)) {
-                showDialog(new LimitReachedBottomSheet(this, getContext(), LimitReachedBottomSheet.TYPE_SHARED_FOLDERS, currentAccount));
+                showDialog(new LimitReachedBottomSheet(this, getContext(), LimitReachedBottomSheet.TYPE_SHARED_FOLDERS, currentAccount, null));
             } else {
                 finishFragment();
             }
@@ -358,8 +359,8 @@ public class FilterChatlistActivity extends BaseFragment {
             getConnectionsManager().cancelRequest(savingTitleReqId, true);
             savingTitleReqId = 0;
         }
-        TLRPC.TL_chatlists_editExportedInvite req = new TLRPC.TL_chatlists_editExportedInvite();
-        req.chatlist = new TLRPC.TL_inputChatlistDialogFilter();
+        TL_chatlists.TL_chatlists_editExportedInvite req = new TL_chatlists.TL_chatlists_editExportedInvite();
+        req.chatlist = new TL_chatlists.TL_inputChatlistDialogFilter();
         req.chatlist.filter_id = filter.id;
         req.slug = getSlug();
         req.revoked = invite.revoked;
@@ -490,8 +491,8 @@ public class FilterChatlistActivity extends BaseFragment {
                             return;
                         }
 
-                        TLRPC.TL_chatlists_editExportedInvite req = new TLRPC.TL_chatlists_editExportedInvite();
-                        req.chatlist = new TLRPC.TL_inputChatlistDialogFilter();
+                        TL_chatlists.TL_chatlists_editExportedInvite req = new TL_chatlists.TL_chatlists_editExportedInvite();
+                        req.chatlist = new TL_chatlists.TL_inputChatlistDialogFilter();
                         req.chatlist.filter_id = filter.id;
                         req.revoked = revoke;
                         req.slug = getSlug();
@@ -508,8 +509,8 @@ public class FilterChatlistActivity extends BaseFragment {
 
                     @Override
                     protected void deleteLink() {
-                        TLRPC.TL_chatlists_deleteExportedInvite req = new TLRPC.TL_chatlists_deleteExportedInvite();
-                        req.chatlist = new TLRPC.TL_inputChatlistDialogFilter();
+                        TL_chatlists.TL_chatlists_deleteExportedInvite req = new TL_chatlists.TL_chatlists_deleteExportedInvite();
+                        req.chatlist = new TL_chatlists.TL_inputChatlistDialogFilter();
                         req.chatlist.filter_id = filter.id;
                         req.slug = getSlug();
                         final AlertDialog progressDialog = new AlertDialog(getContext(), AlertDialog.ALERT_TYPE_SPINNER);
@@ -992,7 +993,7 @@ public class FilterChatlistActivity extends BaseFragment {
             copyButton.setGravity(Gravity.CENTER);
             copyButton.setTextColor(Theme.getColor(Theme.key_featuredStickers_buttonText));
             copyButton.setBackground(Theme.createRadSelectorDrawable(0x30ffffff, 8, 8));
-            copyButton.setTypeface(AndroidUtilities.getTypeface(AndroidUtilities.TYPEFACE_ROBOTO_MEDIUM));
+            copyButton.setTypeface(AndroidUtilities.bold());
             copyButton.setTextSize(14);
             SpannableStringBuilder spannableStringBuilder = new SpannableStringBuilder();
             spannableStringBuilder.append("..").setSpan(new ColoredImageSpan(ContextCompat.getDrawable(context, R.drawable.msg_copy_filled)), 0, 1, 0);
@@ -1017,7 +1018,7 @@ public class FilterChatlistActivity extends BaseFragment {
             shareButton.setGravity(Gravity.CENTER);
             shareButton.setTextColor(Theme.getColor(Theme.key_featuredStickers_buttonText));
             shareButton.setBackground(Theme.createRadSelectorDrawable(0x30ffffff, 8, 8));
-            shareButton.setTypeface(AndroidUtilities.getTypeface(AndroidUtilities.TYPEFACE_ROBOTO_MEDIUM));
+            shareButton.setTypeface(AndroidUtilities.bold());
             shareButton.setTextSize(14);
             spannableStringBuilder = new SpannableStringBuilder();
             spannableStringBuilder.append("..").setSpan(new ColoredImageSpan(ContextCompat.getDrawable(context, R.drawable.msg_share_filled)), 0, 1, 0);
@@ -1034,7 +1035,7 @@ public class FilterChatlistActivity extends BaseFragment {
             generateButton.setGravity(Gravity.CENTER);
             generateButton.setTextColor(Theme.getColor(Theme.key_featuredStickers_buttonText));
             generateButton.setBackground(Theme.createRadSelectorDrawable(0x30ffffff, 8, 8));
-            generateButton.setTypeface(AndroidUtilities.getTypeface(AndroidUtilities.TYPEFACE_ROBOTO_MEDIUM));
+            generateButton.setTypeface(AndroidUtilities.bold());
             generateButton.setTextSize(14);
             generateButton.setText("Generate Invite Link");
             generateButton.setOnClickListener(e -> generate());

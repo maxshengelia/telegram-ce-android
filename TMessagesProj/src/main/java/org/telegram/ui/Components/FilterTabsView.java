@@ -29,7 +29,6 @@ import android.text.SpannableStringBuilder;
 import android.text.StaticLayout;
 import android.text.TextPaint;
 import android.text.TextUtils;
-import android.util.Log;
 import android.util.Property;
 import android.util.SparseIntArray;
 import android.view.HapticFeedbackConstants;
@@ -825,9 +824,9 @@ public class FilterTabsView extends FrameLayout {
     public FilterTabsView(Context context) {
         super(context);
         textCounterPaint.setTextSize(AndroidUtilities.dp(13));
-        textCounterPaint.setTypeface(AndroidUtilities.getTypeface("fonts/rmedium.ttf"));
+        textCounterPaint.setTypeface(AndroidUtilities.bold());
         textPaint.setTextSize(AndroidUtilities.dp(15));
-        textPaint.setTypeface(AndroidUtilities.getTypeface("fonts/rmedium.ttf"));
+        textPaint.setTypeface(AndroidUtilities.bold());
         deletePaint.setStyle(Paint.Style.STROKE);
         deletePaint.setStrokeCap(Paint.Cap.ROUND);
         deletePaint.setStrokeWidth(AndroidUtilities.dp(1.5f));
@@ -1706,7 +1705,7 @@ public class FilterTabsView extends FrameLayout {
 
         @Override
         public int getMovementFlags(RecyclerView recyclerView, RecyclerView.ViewHolder viewHolder) {
-            if (MessagesController.getInstance(UserConfig.selectedAccount).premiumLocked && (!isEditing || (viewHolder.getAdapterPosition() == 0 && tabs.get(0).isDefault && !UserConfig.getInstance(UserConfig.selectedAccount).isPremium()))) {
+            if (MessagesController.getInstance(UserConfig.selectedAccount).premiumFeaturesBlocked() && (!isEditing || (viewHolder.getAdapterPosition() == 0 && tabs.get(0).isDefault && !UserConfig.getInstance(UserConfig.selectedAccount).isPremium()))) {
                 return makeMovementFlags(0, 0);
             }
             return makeMovementFlags(ItemTouchHelper.LEFT | ItemTouchHelper.RIGHT, 0);
@@ -1714,7 +1713,7 @@ public class FilterTabsView extends FrameLayout {
 
         @Override
         public boolean onMove(RecyclerView recyclerView, RecyclerView.ViewHolder source, RecyclerView.ViewHolder target) {
-            if (MessagesController.getInstance(UserConfig.selectedAccount).premiumLocked && ((source.getAdapterPosition() == 0 || target.getAdapterPosition() == 0) && !UserConfig.getInstance(UserConfig.selectedAccount).isPremium())) {
+            if (MessagesController.getInstance(UserConfig.selectedAccount).premiumFeaturesBlocked() && ((source.getAdapterPosition() == 0 || target.getAdapterPosition() == 0) && !UserConfig.getInstance(UserConfig.selectedAccount).isPremium())) {
                 return false;
             }
             adapter.swapElements(source.getAdapterPosition(), target.getAdapterPosition());

@@ -22,6 +22,7 @@ import androidx.recyclerview.widget.RecyclerView;
 
 import org.telegram.messenger.AndroidUtilities;
 import org.telegram.messenger.ContactsController;
+import org.telegram.messenger.DialogObject;
 import org.telegram.messenger.FileLog;
 import org.telegram.messenger.LocaleController;
 import org.telegram.messenger.MessagesController;
@@ -29,6 +30,7 @@ import org.telegram.messenger.R;
 import org.telegram.messenger.UserConfig;
 import org.telegram.tgnet.ConnectionsManager;
 import org.telegram.tgnet.TLRPC;
+import org.telegram.tgnet.tl.TL_stories;
 import org.telegram.ui.ActionBar.ActionBar;
 import org.telegram.ui.ActionBar.BaseFragment;
 import org.telegram.ui.ActionBar.Theme;
@@ -57,7 +59,7 @@ public class ContactsAdapter extends RecyclerListView.SectionsAdapter {
     private int onlyUsers;
     private boolean needPhonebook;
     private LongSparseArray<TLRPC.User> ignoreUsers;
-    private LongSparseArray<?> checkedMap;
+    private LongSparseArray<TLRPC.User> selectedContacts;
     private ArrayList<TLRPC.TL_contact> onlineContacts;
     private boolean scrolling;
     private boolean isAdmin;
@@ -67,23 +69,24 @@ public class ContactsAdapter extends RecyclerListView.SectionsAdapter {
     private boolean hasGps;
     private boolean isEmpty;
     public boolean hasStories;
-    public ArrayList<TLRPC.TL_userStories> userStories = new ArrayList<>();
+    public ArrayList<TL_stories.PeerStories> userStories = new ArrayList<>();
 
     DialogStoriesCell dialogStoriesCell;
     BaseFragment fragment;
 
-    public ContactsAdapter(Context context, BaseFragment fragment, int onlyUsersType, boolean showPhoneBook, LongSparseArray<TLRPC.User> usersToIgnore, int flags, boolean gps) {
+    public ContactsAdapter(Context context, BaseFragment fragment, int onlyUsersType, boolean showPhoneBook, LongSparseArray<TLRPC.User> usersToIgnore, LongSparseArray<TLRPC.User> selectedContacts, int flags, boolean gps) {
         mContext = context;
         onlyUsers = onlyUsersType;
         needPhonebook = showPhoneBook;
         ignoreUsers = usersToIgnore;
+        this.selectedContacts = selectedContacts;
         isAdmin = flags != 0;
         isChannel = flags == 2;
         hasGps = gps;
         this.fragment = fragment;
     }
 
-    public void setStories(ArrayList<TLRPC.TL_userStories> stories, boolean animated) {
+    public void setStories(ArrayList<TL_stories.PeerStories> stories, boolean animated) {
 //        boolean hasStories = !stories.isEmpty();
 //        userStories.clear();
 //        userStories.addAll(stories);
@@ -173,10 +176,6 @@ public class ContactsAdapter extends RecyclerListView.SectionsAdapter {
         }
     }
 
-    public void setCheckedMap(LongSparseArray<?> map) {
-        checkedMap = map;
-    }
-
     public void setIsScrolling(boolean value) {
         scrolling = value;
     }
@@ -193,7 +192,7 @@ public class ContactsAdapter extends RecyclerListView.SectionsAdapter {
             if (position == userStories.size()) {
                 return "Header";
             } else {
-                return userStories.get(position).user_id;
+                return DialogObject.getPeerDialogId(userStories.get(position).peer);
             }
         } else if (hasStories && section > 1) {
             section--;
@@ -516,7 +515,7 @@ public class ContactsAdapter extends RecyclerListView.SectionsAdapter {
                     userCell.setAvatarPadding(6);
                     userCell.storyParams.drawSegments = true;
                     StoriesController storiesController = MessagesController.getInstance(currentAccount).getStoriesController();
-                    TLRPC.User user = MessagesController.getInstance(currentAccount).getUser(userStories.get(position).user_id);
+                    TLRPC.User user = MessagesController.getInstance(currentAccount).getUser(DialogObject.getPeerDialogId(userStories.get(position).peer));
                     if (storiesController.hasUnreadStories(user.id)) {
                         int newStories = storiesController.getUnreadStoriesCount(user.id);
                         userCell.setData(user, ContactsController.formatName(user), LocaleController.formatPluralString("NewStories", newStories, newStories).toLowerCase(), 0);
@@ -556,9 +555,7 @@ public class ContactsAdapter extends RecyclerListView.SectionsAdapter {
                 }
                 TLRPC.User user = MessagesController.getInstance(currentAccount).getUser(arr.get(position).user_id);
                 userCell.setData(user, null, null, 0);
-                if (checkedMap != null) {
-                    userCell.setChecked(checkedMap.indexOfKey(user.id) >= 0, !scrolling);
-                }
+                userCell.setChecked(selectedContacts.indexOfKey(user.id) >= 0, false);
                 if (ignoreUsers != null) {
                     if (ignoreUsers.indexOfKey(user.id) >= 0) {
                         userCell.setAlpha(0.5f);
@@ -702,7 +699,7 @@ public class ContactsAdapter extends RecyclerListView.SectionsAdapter {
 
     public void removeStory(long dialogId) {
         for (int i = 0; i < userStories.size(); i++) {
-            if (userStories.get(i).user_id == dialogId) {
+            if (DialogObject.getPeerDialogId(userStories.get(i).peer) == dialogId) {
                 userStories.remove(i);
 
                 if (userStories.isEmpty()) {

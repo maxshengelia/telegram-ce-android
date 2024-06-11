@@ -37,11 +37,13 @@ import org.telegram.messenger.R;
 import org.telegram.messenger.UserObject;
 import org.telegram.tgnet.TLRPC;
 import org.telegram.ui.ActionBar.Theme;
+import org.telegram.ui.Cells.GroupCreateUserCell;
 
 public class GroupCreateSpan extends View {
 
     private long uid;
     private String key;
+    public boolean isFlag;
     private static TextPaint textPaint = new TextPaint(Paint.ANTI_ALIAS_FLAG);
     private static Paint backPaint = new Paint(Paint.ANTI_ALIAS_FLAG);
     private Drawable deleteDrawable;
@@ -58,6 +60,7 @@ public class GroupCreateSpan extends View {
     private int[] colors = new int[8];
     private Theme.ResourcesProvider resourcesProvider;
     private boolean small;
+    private boolean drawAvatarBackground = true;
 
     public GroupCreateSpan(Context context, Object object) {
         this(context, object, null);
@@ -79,6 +82,7 @@ public class GroupCreateSpan extends View {
         super(context);
         this.resourcesProvider = resourcesProvider;
         this.small = small;
+        isFlag = false;
 
         currentContact = contact;
         deleteDrawable = getResources().getDrawable(R.drawable.delete);
@@ -132,6 +136,21 @@ public class GroupCreateSpan extends View {
                     uid = Long.MIN_VALUE + 6;
                     firstName = LocaleController.getString("FilterRead", R.string.FilterRead);
                     break;
+                case "existing_chats":
+                    avatarDrawable.setAvatarType(AvatarDrawable.AVATAR_TYPE_EXISTING_CHATS);
+                    uid = Long.MIN_VALUE + 8;
+                    firstName = LocaleController.getString(R.string.FilterExistingChats);
+                    break;
+                case "new_chats":
+                    avatarDrawable.setAvatarType(AvatarDrawable.AVATAR_TYPE_NEW_CHATS);
+                    uid = Long.MIN_VALUE + 9;
+                    firstName = LocaleController.getString(R.string.FilterNewChats);
+                    break;
+                case "premium":
+                    isFlag = true;
+                    avatarDrawable.setColor(Theme.getColor(Theme.key_premiumGradientBackground2, resourcesProvider));
+                    firstName = LocaleController.getString(R.string.PrivacyPremium);
+                    break;
                 case "archived":
                 default:
                     avatarDrawable.setAvatarType(AvatarDrawable.AVATAR_TYPE_FILTER_ARCHIVED);
@@ -171,6 +190,18 @@ public class GroupCreateSpan extends View {
             firstName = chat.title;
             imageLocation = ImageLocation.getForUserOrChat(chat, ImageLocation.TYPE_SMALL);
             imageParent = chat;
+        } else if (object instanceof TLRPC.TL_help_country) {
+            TLRPC.TL_help_country country = (TLRPC.TL_help_country) object;
+            String flag = LocaleController.getLanguageFlag(country.iso2);
+            firstName = country.default_name;
+            avatarDrawable.setAvatarType(AvatarDrawable.AVATAR_TYPE_COUNTRY);
+            avatarDrawable.setTextSize(AndroidUtilities.dp(24));
+            avatarDrawable.setInfo(0, flag, null, null);
+            avatarDrawable.setColor(Theme.multAlpha(Theme.getColor(Theme.key_text_RedRegular, resourcesProvider), 0.7f));
+            avatarDrawable.setDrawAvatarBackground(drawAvatarBackground = false);
+            uid = country.default_name.hashCode();
+            imageLocation = null;
+            imageParent = null;
         } else {
             avatarDrawable.setInfo(0, contact.first_name, contact.last_name);
             uid = contact.contact_id;
@@ -187,7 +218,7 @@ public class GroupCreateSpan extends View {
         imageReceiver = new ImageReceiver();
         imageReceiver.setRoundRadius(AndroidUtilities.dp(16));
         imageReceiver.setParentView(this);
-        imageReceiver.setImageCoords(0, 0, AndroidUtilities.dp(small ? 28 : 32), AndroidUtilities.dp(small ? 28 : 32));
+        imageReceiver.setImageCoords(drawAvatarBackground ? 0 : AndroidUtilities.dp(4), 0, AndroidUtilities.dp(small ? 28 : 32), AndroidUtilities.dp(small ? 28 : 32));
 
         int maxNameWidth;
         if (AndroidUtilities.isTablet()) {
@@ -205,7 +236,11 @@ public class GroupCreateSpan extends View {
             textWidth = (int) Math.ceil(nameLayout.getLineWidth(0));
             textX = -nameLayout.getLineLeft(0);
         }
-        imageReceiver.setImage(imageLocation, "50_50", avatarDrawable, 0, null, imageParent, 1);
+        if (object instanceof String && "premium".equals((String) object)) {
+            imageReceiver.setImageBitmap(GroupCreateUserCell.makePremiumUsersDrawable(getContext(), true));
+        } else {
+            imageReceiver.setImage(imageLocation, "50_50", avatarDrawable, 0, null, imageParent, 1);
+        }
         updateColors();
 
         NotificationCenter.listenEmojiLoading(this);

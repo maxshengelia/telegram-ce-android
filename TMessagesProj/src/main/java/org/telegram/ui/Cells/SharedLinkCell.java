@@ -195,7 +195,7 @@ public class SharedLinkCell extends FrameLayout {
         setFocusable(true);
 
         titleTextPaint = new TextPaint(Paint.ANTI_ALIAS_FLAG);
-        titleTextPaint.setTypeface(AndroidUtilities.getTypeface("fonts/rmedium.ttf"));
+        titleTextPaint.setTypeface(AndroidUtilities.bold());
         titleTextPaint.setColor(Theme.getColor(Theme.key_windowBackgroundWhiteBlackText, resourcesProvider));
 
         descriptionTextPaint = new TextPaint(Paint.ANTI_ALIAS_FLAG);
@@ -464,7 +464,9 @@ public class SharedLinkCell extends FrameLayout {
             if (currentPhotoObjectThumb == currentPhotoObject) {
                 currentPhotoObjectThumb = null;
             }
-            currentPhotoObject.size = -1;
+            if (currentPhotoObject != null) {
+                currentPhotoObject.size = -1;
+            }
             if (currentPhotoObjectThumb != null) {
                 currentPhotoObjectThumb.size = -1;
             }

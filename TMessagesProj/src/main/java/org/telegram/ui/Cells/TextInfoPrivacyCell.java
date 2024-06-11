@@ -140,6 +140,10 @@ public class TextInfoPrivacyCell extends FrameLayout {
         fixedSize = size;
     }
 
+    public CharSequence getText() {
+        return textView.getText();
+    }
+
     public void setText(CharSequence text) {
         if (!TextUtils.equals(text, this.text)) {
             this.text = text;
@@ -186,6 +190,10 @@ public class TextInfoPrivacyCell extends FrameLayout {
         } else {
             textView.setAlpha(value ? 1.0f : 0.5f);
         }
+    }
+
+    public void setTextGravity(int gravity) {
+        textView.setGravity(gravity);
     }
 
     @Override

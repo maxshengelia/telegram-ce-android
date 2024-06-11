@@ -8,6 +8,8 @@ import android.content.Context;
 import android.graphics.Bitmap;
 import android.graphics.Canvas;
 import android.graphics.Color;
+import android.graphics.ColorMatrix;
+import android.graphics.ColorMatrixColorFilter;
 import android.graphics.Outline;
 import android.graphics.Paint;
 import android.graphics.Path;
@@ -43,6 +45,7 @@ import org.telegram.ui.Components.BackupImageView;
 import org.telegram.ui.Components.CubicBezierInterpolator;
 import org.telegram.ui.Components.LayoutHelper;
 import org.telegram.ui.Components.spoilers.SpoilerEffect;
+import org.telegram.ui.Components.spoilers.SpoilerEffect2;
 
 public class PinchToZoomHelper {
 
@@ -53,12 +56,14 @@ public class PinchToZoomHelper {
     private ZoomOverlayView overlayView;
     private View child;
     private ImageReceiver childImage;
-    private TextureView childTextureView;
+    private View childTextureViewContainer;
+    private View childTextureView;
 
     private ImageReceiver fullImage = new ImageReceiver();
     private ImageReceiver blurImage = new ImageReceiver();
     private boolean hasMediaSpoiler;
     private SpoilerEffect mediaSpoilerEffect = new SpoilerEffect();
+    private SpoilerEffect2 mediaSpoilerEffect2;
     private Path path = new Path();
     private float[] spoilerRadii = new float[8];
 
@@ -117,7 +122,7 @@ public class PinchToZoomHelper {
         this.isSimple = true;
     }
 
-    public void startZoom(View child, ImageReceiver image, TextureView textureView, MessageObject messageObject) {
+    public void startZoom(View child, ImageReceiver image, View textureViewContainer, View textureView, MessageObject messageObject, int spoilerEffect2AttachIndex) {
         this.child = child;
         this.messageObject = messageObject;
 
@@ -148,6 +153,14 @@ public class PinchToZoomHelper {
             parentView.addView(overlayView);
 
             hasMediaSpoiler = messageObject != null && messageObject.hasMediaSpoilers() && !messageObject.isMediaSpoilersRevealed;
+            if (hasMediaSpoiler) {
+                if (mediaSpoilerEffect2 == null && SpoilerEffect2.supports()) {
+                    mediaSpoilerEffect2 = SpoilerEffect2.getInstance(overlayView);
+                    if (mediaSpoilerEffect2 != null) {
+                        mediaSpoilerEffect2.reassignAttach(overlayView, spoilerEffect2AttachIndex);
+                    }
+                }
+            }
             if (blurImage.getBitmap() != null) {
                 blurImage.getBitmap().recycle();
                 blurImage.setImageBitmap((Bitmap) null);
@@ -155,6 +168,9 @@ public class PinchToZoomHelper {
 
             if (image.getBitmap() != null && !image.getBitmap().isRecycled() && hasMediaSpoiler) {
                 blurImage.setImageBitmap(Utilities.stackBlurBitmapMax(image.getBitmap()));
+                blurImage.setColorFilter(getFancyBlurFilter());
+            } else {
+                blurImage.setColorFilter(null);
             }
 
             setFullImage(messageObject);
@@ -197,24 +213,28 @@ public class PinchToZoomHelper {
                 if (callback != null) {
                     overlayView.backupImageView.setImageBitmap(callback.getCurrentTextureView().getBitmap((int) fullImageWidth, (int) fullImageHeight));
                     overlayView.backupImageView.setSize((int) fullImageWidth, (int) fullImageHeight);
-                    overlayView.backupImageView.getImageReceiver().setRoundRadius(image.getRoundRadius());
+                    overlayView.backupImageView.getImageReceiver().setRoundRadius(image.getRoundRadius(true));
                 }
                 overlayView.videoPlayerContainer.setVisibility(View.VISIBLE);
             } else {
                 isHardwareVideo = false;
                 this.childImage = new ImageReceiver();
+                this.childTextureViewContainer = textureViewContainer;
                 this.childTextureView = textureView;
                 this.childImage.onAttachedToWindow();
                 Drawable drawable = image.getDrawable();
                 this.childImage.setImageBitmap(drawable);
+
                 if (drawable instanceof AnimatedFileDrawable) {
                     ((AnimatedFileDrawable) drawable).addSecondParentView(overlayView);
                     ((AnimatedFileDrawable) drawable).setInvalidateParentViewWithSecond(true);
                 }
                 this.childImage.setImageCoords(imageX, imageY, imageWidth, imageHeight);
-                this.childImage.setRoundRadius(image.getRoundRadius());
+                this.childImage.setAspectFit(image.isAspectFit());
+                this.childImage.setRoundRadius(image.getRoundRadius(true));
 
-                this.fullImage.setRoundRadius(image.getRoundRadius());
+                this.fullImage.setRoundRadius(image.getRoundRadius(true));
+                this.fullImage.setAspectFit(image.isAspectFit());
                 overlayView.videoPlayerContainer.setVisibility(View.GONE);
             }
         }
@@ -257,7 +277,11 @@ public class PinchToZoomHelper {
             }
             parentOffsetX += currentView.getLeft();
             parentOffsetY += currentView.getTop();
-            currentView = (View) currentView.getParent();
+            if (currentView.getParent() instanceof View) {
+                currentView = (View) currentView.getParent();
+            } else {
+                break;
+            }
         }
 
         float fragmentOffsetX = 0;
@@ -319,6 +343,10 @@ public class PinchToZoomHelper {
         if (overlayView != null && overlayView.getParent() != null) {
             parentView.removeView(overlayView);
             overlayView.backupImageView.getImageReceiver().clearImage();
+            if (mediaSpoilerEffect2 != null) {
+                mediaSpoilerEffect2.detach(overlayView);
+                mediaSpoilerEffect2 = null;
+            }
 
             if (childImage != null) {
                 Drawable drawable = this.childImage.getDrawable();
@@ -393,7 +421,7 @@ public class PinchToZoomHelper {
                 return true;
             }
         }
-        return receiver.hasNotThumb();
+        return receiver.hasNotThumbOrOnlyStaticThumb();
     }
 
 
@@ -418,7 +446,7 @@ public class PinchToZoomHelper {
                     public void getOutline(View view, Outline outline) {
                         ImageReceiver imageReceiver = (ImageReceiver) view.getTag(R.id.parent_tag);
                         if (imageReceiver != null) {
-                            int[] rad = imageReceiver.getRoundRadius();
+                            int[] rad = imageReceiver.getRoundRadius(true);
                             int maxRad = 0;
                             for (int a = 0; a < 4; a++) {
                                 maxRad = Math.max(maxRad, rad[a]);
@@ -441,7 +469,7 @@ public class PinchToZoomHelper {
                         aspectPath.reset();
                         ImageReceiver imageReceiver = (ImageReceiver) getTag(R.id.parent_tag);
                         if (imageReceiver != null) {
-                            int[] rad = imageReceiver.getRoundRadius();
+                            int[] rad = imageReceiver.getRoundRadius(true);
                             int maxRad = 0;
                             for (int a = 0; a < 4; a++) {
                                 maxRad = Math.max(maxRad, rad[a]);
@@ -586,10 +614,22 @@ public class PinchToZoomHelper {
                         fullImage.draw(canvas);
                     }
                 }
-                if (childTextureView != null) {
+                if (childTextureViewContainer != null) {
+                    View view = childTextureView;
+                    if (view == null) {
+                        view = childTextureViewContainer;
+                    }
                     canvas.save();
                     canvas.translate(childImage.getImageX(), childImage.getImageY());
-                    childTextureView.draw(canvas);
+                    float scaleX = childImage.getImageWidth() / childTextureViewContainer.getMeasuredWidth();
+                    float scaleY = childImage.getImageHeight() / childTextureViewContainer.getMeasuredHeight();
+                    float maxScale = Math.max(scaleX, scaleY);
+                    if (childImage.isAspectFit()) {
+                        canvas.scale(maxScale, maxScale, childTextureViewContainer.getMeasuredWidth() / 2f, 0);
+                    } else {
+                        canvas.scale(maxScale, maxScale);
+                    }
+                    childTextureViewContainer.draw(canvas);
                     canvas.restore();
                 }
             } else {
@@ -605,11 +645,11 @@ public class PinchToZoomHelper {
 
             if (hasMediaSpoiler) {
                 blurImage.setAlpha(childImage.getAlpha());
-                blurImage.setRoundRadius(childImage.getRoundRadius());
+                blurImage.setRoundRadius(childImage.getRoundRadius(true));
                 blurImage.setImageCoords(childImage.getImageX(), childImage.getImageY(), childImage.getImageWidth(), childImage.getImageHeight());
                 blurImage.draw(canvas);
 
-                int[] rad = childImage.getRoundRadius();
+                int[] rad = childImage.getRoundRadius(true);
                 spoilerRadii[0] = spoilerRadii[1] = rad[0];
                 spoilerRadii[2] = spoilerRadii[3] = rad[1];
                 spoilerRadii[4] = spoilerRadii[5] = rad[2];
@@ -621,10 +661,15 @@ public class PinchToZoomHelper {
 
                 canvas.save();
                 canvas.clipPath(path);
-                int sColor = Color.WHITE;
-                mediaSpoilerEffect.setColor(ColorUtils.setAlphaComponent(sColor, (int) (Color.alpha(sColor) * 0.325f * childImage.getAlpha())));
-                mediaSpoilerEffect.setBounds((int) childImage.getImageX(), (int) childImage.getImageY(), (int) childImage.getImageX2(), (int) childImage.getImageY2());
-                mediaSpoilerEffect.draw(canvas);
+                if (mediaSpoilerEffect2 != null) {
+                    canvas.translate(childImage.getImageX(), childImage.getImageY());
+                    mediaSpoilerEffect2.draw(canvas, overlayView, (int) childImage.getImageWidth(), (int) childImage.getImageHeight());
+                } else {
+                    int sColor = Color.WHITE;
+                    mediaSpoilerEffect.setColor(ColorUtils.setAlphaComponent(sColor, (int) (Color.alpha(sColor) * 0.325f * childImage.getAlpha())));
+                    mediaSpoilerEffect.setBounds((int) childImage.getImageX(), (int) childImage.getImageY(), (int) childImage.getImageX2(), (int) childImage.getImageY2());
+                    mediaSpoilerEffect.draw(canvas);
+                }
                 canvas.restore();
 
                 invalidate();
@@ -716,7 +761,11 @@ public class PinchToZoomHelper {
         void getClipTopBottom(float[] topBottom);
     }
 
-    public boolean checkPinchToZoom(MotionEvent ev, View child, ImageReceiver image, TextureView textureView, MessageObject messageObject) {
+    public boolean checkPinchToZoom(MotionEvent ev, View child, ImageReceiver image, View textureViewContainer, View textureView, MessageObject messageObject) {
+        return checkPinchToZoom(ev, child, image, textureViewContainer, textureView, messageObject, 0);
+    }
+
+    public boolean checkPinchToZoom(MotionEvent ev, View child, ImageReceiver image, View textureViewContainer, View textureView, MessageObject messageObject, int spoilerEffect2Index) {
         if (!zoomEnabled(child, image)) {
             return false;
         }
@@ -757,7 +806,7 @@ public class PinchToZoomHelper {
                 pinchTranslationX = 0f;
                 pinchTranslationY = 0f;
                 child.getParent().requestDisallowInterceptTouchEvent(true);
-                startZoom(child, image, textureView, messageObject);
+                startZoom(child, image, textureViewContainer, textureView, messageObject, spoilerEffect2Index);
 
             }
 
@@ -814,5 +863,16 @@ public class PinchToZoomHelper {
 
     public View getChild() {
         return child;
+    }
+
+    private ColorMatrixColorFilter fancyBlurFilter;
+    private ColorMatrixColorFilter getFancyBlurFilter() {
+        if (fancyBlurFilter == null) {
+            ColorMatrix colorMatrix = new ColorMatrix();
+            AndroidUtilities.multiplyBrightnessColorMatrix(colorMatrix, .9f);
+            AndroidUtilities.adjustSaturationColorMatrix(colorMatrix, +.6f);
+            fancyBlurFilter = new ColorMatrixColorFilter(colorMatrix);
+        }
+        return fancyBlurFilter;
     }
 }

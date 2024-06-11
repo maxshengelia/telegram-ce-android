@@ -48,6 +48,7 @@ import org.telegram.messenger.LocaleController;
 import org.telegram.messenger.MediaController;
 import org.telegram.messenger.MessagesController;
 import org.telegram.messenger.R;
+import org.telegram.messenger.SavedMessagesController;
 import org.telegram.messenger.UserConfig;
 import org.telegram.messenger.UserObject;
 import org.telegram.tgnet.ConnectionsManager;
@@ -55,14 +56,16 @@ import org.telegram.tgnet.TLObject;
 import org.telegram.tgnet.TLRPC;
 import org.telegram.ui.ActionBar.BaseFragment;
 import org.telegram.ui.ActionBar.Theme;
+import org.telegram.ui.Components.Premium.boosts.BoostRepository;
 import org.telegram.ui.PaymentFormActivity;
 
 import java.util.ArrayList;
 
 @SuppressWarnings("FieldCanBeLocal")
+@Deprecated // use Bulletin instead
 public class UndoView extends FrameLayout {
 
-    private TextView infoTextView;
+    private LinkSpanDrawable.LinksTextView infoTextView;
     private TextView subinfoTextView;
     private TextView undoTextView;
     private ImageView undoImageView;
@@ -183,6 +186,12 @@ public class UndoView extends FrameLayout {
     public final static int ACTION_PROXY_ADDED = 87;
     public final static int ACTION_SHARED_FOLDER_DELETED = 88;
 
+    public final static int ACTION_BOOSTING_SELECTOR_WARNING_CHANNEL = 90;
+    public final static int ACTION_BOOSTING_SELECTOR_WARNING_USERS = 91;
+    public final static int ACTION_BOOSTING_SELECTOR_WARNING_COUNTRY = 92;
+    public final static int ACTION_BOOSTING_AWAIT = 93;
+    public final static int ACTION_BOOSTING_ONLY_RECIPIENT_CODE = 94;
+
     private CharSequence infoText;
     private int hideAnimationType = 1;
     Drawable backgroundDrawable;
@@ -231,7 +240,7 @@ public class UndoView extends FrameLayout {
         parentFragment = parent;
         fromTop = top;
 
-        infoTextView = new TextView(context);
+        infoTextView = new LinkSpanDrawable.LinksTextView(context, resourcesProvider);
         infoTextView.setTextSize(TypedValue.COMPLEX_UNIT_DIP, 15);
         infoTextView.setTextColor(getThemedColor(Theme.key_undo_infoColor));
         infoTextView.setLinkTextColor(getThemedColor(Theme.key_undo_cancelColor));
@@ -289,7 +298,7 @@ public class UndoView extends FrameLayout {
 
         undoTextView = new TextView(context);
         undoTextView.setTextSize(TypedValue.COMPLEX_UNIT_DIP, 14);
-        undoTextView.setTypeface(AndroidUtilities.getTypeface("fonts/rmedium.ttf"));
+        undoTextView.setTypeface(AndroidUtilities.bold());
         undoTextView.setTextColor(getThemedColor(Theme.key_undo_cancelColor));
         undoTextView.setText(LocaleController.getString("Undo", R.string.Undo));
         undoButton.addView(undoTextView, LayoutHelper.createLinear(LayoutHelper.WRAP_CONTENT, LayoutHelper.WRAP_CONTENT, Gravity.CENTER_VERTICAL | Gravity.LEFT, 6, 4, 8, 4));
@@ -304,7 +313,7 @@ public class UndoView extends FrameLayout {
 
         textPaint = new TextPaint(Paint.ANTI_ALIAS_FLAG);
         textPaint.setTextSize(AndroidUtilities.dp(12));
-        textPaint.setTypeface(AndroidUtilities.getTypeface("fonts/rmedium.ttf"));
+        textPaint.setTypeface(AndroidUtilities.bold());
         textPaint.setColor(getThemedColor(Theme.key_undo_infoColor));
 
         setWillNotDraw(false);
@@ -535,7 +544,7 @@ public class UndoView extends FrameLayout {
                 icon = 0;
                 AvatarDrawable avatarDrawable = new AvatarDrawable();
                 avatarDrawable.setTextSize(AndroidUtilities.dp(12));
-                avatarDrawable.setInfo(user);
+                avatarDrawable.setInfo(currentAccount, user);
                 avatarImageView.setForUserOrChat(user, avatarDrawable);
                 avatarImageView.setVisibility(VISIBLE);
                 timeLeft = 3000;
@@ -560,7 +569,7 @@ public class UndoView extends FrameLayout {
                 icon = 0;
                 AvatarDrawable avatarDrawable = new AvatarDrawable();
                 avatarDrawable.setTextSize(AndroidUtilities.dp(12));
-                avatarDrawable.setInfo((TLObject) infoObject);
+                avatarDrawable.setInfo(currentAccount, (TLObject) infoObject);
                 avatarImageView.setForUserOrChat((TLObject) infoObject, avatarDrawable);
                 avatarImageView.setVisibility(VISIBLE);
                 timeLeft = 3000;
@@ -570,12 +579,12 @@ public class UndoView extends FrameLayout {
                 String name;
                 if (infoObject instanceof TLRPC.User) {
                     TLRPC.User user = (TLRPC.User) infoObject;
-                    avatarDrawable.setInfo(user);
+                    avatarDrawable.setInfo(currentAccount, user);
                     avatarImageView.setForUserOrChat(user, avatarDrawable);
                     name = ContactsController.formatName(user.first_name, user.last_name);
                 } else {
                     TLRPC.Chat chat = (TLRPC.Chat) infoObject;
-                    avatarDrawable.setInfo(chat);
+                    avatarDrawable.setInfo(currentAccount, chat);
                     avatarImageView.setForUserOrChat(chat, avatarDrawable);
                     name = chat.title;
                 }
@@ -609,8 +618,8 @@ public class UndoView extends FrameLayout {
                         req.msg_id = message.id;
                         req.peer = parentFragment.getMessagesController().getInputPeer(message.peer_id);
                         parentFragment.getConnectionsManager().sendRequest(req, (response, error) -> AndroidUtilities.runOnUIThread(() -> {
-                            if (response instanceof TLRPC.TL_payments_paymentReceipt) {
-                                parentFragment.presentFragment(new PaymentFormActivity((TLRPC.TL_payments_paymentReceipt) response));
+                            if (response instanceof TLRPC.PaymentReceipt) {
+                                parentFragment.presentFragment(new PaymentFormActivity((TLRPC.PaymentReceipt) response));
                             }
                         }), ConnectionsManager.RequestFlagFailOnServerErrors);
                     });
@@ -816,10 +825,16 @@ public class UndoView extends FrameLayout {
                     }
                     if (DialogObject.isUserDialog(dialogId)) {
                         TLRPC.User user = MessagesController.getInstance(currentAccount).getUser(dialogId);
+                        String name = UserObject.getFirstName(user);
+                        if (UserObject.isUserSelf(user)) {
+                            name = LocaleController.getString(R.string.SavedMessages);
+                        } else if (UserObject.isReplyUser(user)) {
+                            name = LocaleController.getString(R.string.RepliesTitle);
+                        }
                         if (action == ACTION_ADDED_TO_FOLDER) {
-                            infoText = AndroidUtilities.replaceTags(LocaleController.formatString("FilterUserAddedToExisting", R.string.FilterUserAddedToExisting, UserObject.getFirstName(user), filter.name));
+                            infoText = AndroidUtilities.replaceTags(LocaleController.formatString("FilterUserAddedToExisting", R.string.FilterUserAddedToExisting, name, filter.name));
                         } else {
-                            infoText = AndroidUtilities.replaceTags(LocaleController.formatString("FilterUserRemovedFrom", R.string.FilterUserRemovedFrom, UserObject.getFirstName(user), filter.name));
+                            infoText = AndroidUtilities.replaceTags(LocaleController.formatString("FilterUserRemovedFrom", R.string.FilterUserRemovedFrom, name, filter.name));
                         }
                     } else {
                         TLRPC.Chat chat = MessagesController.getInstance(currentAccount).getChat(-dialogId);
@@ -901,7 +916,7 @@ public class UndoView extends FrameLayout {
                 subinfoTextView.setText(subInfoText);
                 subinfoTextView.setVisibility(VISIBLE);
                 infoTextView.setTextSize(TypedValue.COMPLEX_UNIT_DIP, 14);
-                infoTextView.setTypeface(AndroidUtilities.getTypeface("fonts/rmedium.ttf"));
+                infoTextView.setTypeface(AndroidUtilities.bold());
             } else {
                 layoutParams.leftMargin = AndroidUtilities.dp(58);
                 layoutParams.topMargin = AndroidUtilities.dp(13);
@@ -1029,9 +1044,9 @@ public class UndoView extends FrameLayout {
                 if (infoObject2 == null || infoObject2 instanceof TLRPC.TL_forumTopic) {
                     if (did == UserConfig.getInstance(currentAccount).clientUserId) {
                         if (count == 1) {
-                            infoTextView.setText(AndroidUtilities.replaceTags(LocaleController.getString("FwdMessageToSavedMessages", R.string.FwdMessageToSavedMessages)));
+                            infoTextView.setText(AndroidUtilities.replaceSingleTag(LocaleController.getString("FwdMessageToSavedMessages", R.string.FwdMessageToSavedMessages), SavedMessagesController::openSavedMessages));
                         } else {
-                            infoTextView.setText(AndroidUtilities.replaceTags(LocaleController.getString("FwdMessagesToSavedMessages", R.string.FwdMessagesToSavedMessages)));
+                            infoTextView.setText(AndroidUtilities.replaceSingleTag(LocaleController.getString("FwdMessagesToSavedMessages", R.string.FwdMessagesToSavedMessages), SavedMessagesController::openSavedMessages));
                         }
                         leftImageView.setAnimation(R.raw.saved_messages, 30, 30);
                     } else {
@@ -1110,7 +1125,7 @@ public class UndoView extends FrameLayout {
             leftImageView.setVisibility(VISIBLE);
 
             if (radius != 0) {
-                infoTextView.setTypeface(AndroidUtilities.getTypeface("fonts/rmedium.ttf"));
+                infoTextView.setTypeface(AndroidUtilities.bold());
                 infoTextView.setTextSize(TypedValue.COMPLEX_UNIT_DIP, 14);
                 leftImageView.clearLayerColors();
                 leftImageView.setLayerColor("BODY.**", getThemedColor(Theme.key_undo_infoColor));
@@ -1166,7 +1181,7 @@ public class UndoView extends FrameLayout {
             subinfoTextView.setText(authorization.app_name);
             subinfoTextView.setVisibility(VISIBLE);
             infoTextView.setTextSize(TypedValue.COMPLEX_UNIT_DIP, 14);
-            infoTextView.setTypeface(AndroidUtilities.getTypeface("fonts/rmedium.ttf"));
+            infoTextView.setTypeface(AndroidUtilities.bold());
 
             undoTextView.setTextColor(getThemedColor(Theme.key_text_RedRegular));
             undoImageView.setVisibility(GONE);
@@ -1334,7 +1349,7 @@ public class UndoView extends FrameLayout {
         } else if (currentAction == ACTION_HINT_SWIPE_TO_REPLY) {
             infoTextView.setVisibility(VISIBLE);
             infoTextView.setTextSize(TypedValue.COMPLEX_UNIT_DIP, 15);
-            infoTextView.setTypeface(AndroidUtilities.getTypeface("fonts/rmedium.ttf"));
+            infoTextView.setTypeface(AndroidUtilities.bold());
             infoTextView.setText(LocaleController.getString("SwipeToReplyHint", R.string.SwipeToReplyHint));
             leftImageView.setVisibility(VISIBLE);
             leftImageView.setAnimation(R.raw.hint_swipe_reply, (int) (36 * 1.8f), (int) (36 * 1.8f));
@@ -1351,6 +1366,40 @@ public class UndoView extends FrameLayout {
 
             avatarImageView.setVisibility(GONE);
             undoButton.setVisibility(GONE);
+        } else if (currentAction == ACTION_BOOSTING_SELECTOR_WARNING_CHANNEL
+                || currentAction == ACTION_BOOSTING_SELECTOR_WARNING_USERS
+                || currentAction == ACTION_BOOSTING_SELECTOR_WARNING_COUNTRY
+                || currentAction == ACTION_BOOSTING_AWAIT
+                || currentAction == ACTION_BOOSTING_ONLY_RECIPIENT_CODE
+        ) {
+            switch (currentAction) {
+                case ACTION_BOOSTING_ONLY_RECIPIENT_CODE:
+                    infoTextView.setText(LocaleController.getString("BoostingOnlyRecipientCode", R.string.BoostingOnlyRecipientCode));
+                    break;
+                case ACTION_BOOSTING_SELECTOR_WARNING_USERS:
+                    infoTextView.setText(LocaleController.getString("BoostingSelectUpToWarningUsers", R.string.BoostingSelectUpToWarningUsers));
+                    break;
+                case ACTION_BOOSTING_SELECTOR_WARNING_CHANNEL:
+                    infoTextView.setText(LocaleController.formatPluralString("BoostingSelectUpToWarningChannelsGroupsPlural", (int) BoostRepository.giveawayAddPeersMax()));
+                    break;
+                case ACTION_BOOSTING_SELECTOR_WARNING_COUNTRY:
+                    infoTextView.setText(LocaleController.formatPluralString("BoostingSelectUpToWarningCountriesPlural", (int) BoostRepository.giveawayCountriesMax()));
+                    break;
+                case ACTION_BOOSTING_AWAIT:
+                    infoTextView.setText(AndroidUtilities.replaceTags(LocaleController.formatPluralString("BoostingWaitWarningPlural", BoostRepository.boostsPerSentGift())));
+                    break;
+            }
+            layoutParams.leftMargin = AndroidUtilities.dp(58);
+            layoutParams.rightMargin = AndroidUtilities.dp(8);
+            infoTextView.setTextSize(TypedValue.COMPLEX_UNIT_DIP, 15);
+            undoButton.setVisibility(GONE);
+            infoTextView.setTypeface(Typeface.DEFAULT);
+            subinfoTextView.setVisibility(GONE);
+
+            leftImageView.setVisibility(VISIBLE);
+            leftImageView.setAnimation(R.raw.chats_infotip, 36, 36);
+            leftImageView.setProgress(0);
+            leftImageView.playAnimation();
         } else if (currentAction == ACTION_ARCHIVE || currentAction == ACTION_ARCHIVE_FEW) {
             if (action == ACTION_ARCHIVE) {
                 infoTextView.setText(LocaleController.getString("ChatArchived", R.string.ChatArchived));
@@ -1421,7 +1470,7 @@ public class UndoView extends FrameLayout {
                     layoutParams.rightMargin = margin;
 
                     infoTextView.setText(LocaleController.formatString("FolderLinkDeletedTitle", R.string.FolderLinkDeletedTitle, folderName));
-                    infoTextView.setTypeface(AndroidUtilities.getTypeface(AndroidUtilities.TYPEFACE_ROBOTO_MEDIUM));
+                    infoTextView.setTypeface(AndroidUtilities.bold());
 
                     subinfoTextView.setVisibility(VISIBLE);
                     subinfoTextView.setText(LocaleController.formatPluralString("FolderLinkDeletedSubtitle", chatsCount));
@@ -1607,7 +1656,7 @@ public class UndoView extends FrameLayout {
         if (timeLeft <= 0) {
             hide(true, hideAnimationType);
         }
-        
+
         if (currentAction != ACTION_PREVIEW_MEDIA_DESELECTED) {
             invalidate();
         }

@@ -1,7 +1,10 @@
 package org.telegram.ui.Stories;
 
+import org.telegram.messenger.MessagesController;
+import org.telegram.messenger.UserConfig;
 import org.telegram.tgnet.AbstractSerializedData;
 import org.telegram.tgnet.TLRPC;
+import org.telegram.tgnet.tl.TL_stories;
 
 public class MessageMediaStoryFull extends TLRPC.TL_messageMediaStory {
 
@@ -10,8 +13,9 @@ public class MessageMediaStoryFull extends TLRPC.TL_messageMediaStory {
     public void readParams(AbstractSerializedData stream, boolean exception) {
         user_id = stream.readInt64(exception);
         id = stream.readInt32(exception);
-        storyItem = TLRPC.StoryItem.TLdeserialize(stream, stream.readInt32(exception), exception);
+        storyItem = TL_stories.StoryItem.TLdeserialize(stream, stream.readInt32(exception), exception);
         via_mention = stream.readBool(exception);
+        peer = MessagesController.getInstance(UserConfig.selectedAccount).getPeer(user_id);
     }
 
     public void serializeToStream(AbstractSerializedData stream) {

@@ -61,9 +61,8 @@ import org.telegram.ui.Components.Premium.PremiumFeatureBottomSheet;
 import org.telegram.ui.LaunchActivity;
 import org.telegram.ui.PhotoViewer;
 import org.telegram.ui.PremiumPreviewFragment;
-import org.telegram.ui.Stories.DarkThemeResourceProvider;
 
-public class PhotoViewerCaptionEnterView extends FrameLayout implements NotificationCenter.NotificationCenterDelegate, SizeNotifierFrameLayoutPhoto.SizeNotifierFrameLayoutPhotoDelegate {
+public class PhotoViewerCaptionEnterView extends FrameLayout implements NotificationCenter.NotificationCenterDelegate, SizeNotifierFrameLayout.SizeNotifierFrameLayoutDelegate {
 
     private final ImageView doneButton;
 
@@ -167,7 +166,7 @@ public class PhotoViewerCaptionEnterView extends FrameLayout implements Notifica
 
         lengthTextPaint = new TextPaint(TextPaint.ANTI_ALIAS_FLAG);
         lengthTextPaint.setTextSize(AndroidUtilities.dp(13));
-        lengthTextPaint.setTypeface(AndroidUtilities.getTypeface("fonts/rmedium.ttf"));
+        lengthTextPaint.setTypeface(AndroidUtilities.bold());
         lengthTextPaint.setColor(0xffd9d9d9);
 
         messageEditText = new EditTextCaption(context, null) {
@@ -363,7 +362,7 @@ public class PhotoViewerCaptionEnterView extends FrameLayout implements Notifica
                     sendButtonColorAnimator.setDuration(150).start();
                 }
 
-                if (photoViewer.getParentAlert() != null && !photoViewer.getParentAlert().captionLimitBulletinShown && !MessagesController.getInstance(currentAccount).premiumLocked && !UserConfig.getInstance(currentAccount).isPremium() && codePointCount > MessagesController.getInstance(currentAccount).captionLengthLimitDefault && codePointCount < MessagesController.getInstance(currentAccount).captionLengthLimitPremium) {
+                if (photoViewer.getParentAlert() != null && !photoViewer.getParentAlert().captionLimitBulletinShown && !MessagesController.getInstance(currentAccount).premiumFeaturesBlocked() && !UserConfig.getInstance(currentAccount).isPremium() && codePointCount > MessagesController.getInstance(currentAccount).captionLengthLimitDefault && codePointCount < MessagesController.getInstance(currentAccount).captionLengthLimitPremium) {
                     photoViewer.getParentAlert().captionLimitBulletinShown = true;
                     if (heightShouldBeChanged) {
                         AndroidUtilities.runOnUIThread(()->photoViewer.showCaptionLimitBulletin(parent), 300);
@@ -390,7 +389,7 @@ public class PhotoViewerCaptionEnterView extends FrameLayout implements Notifica
                     captionLimitView.performHapticFeedback(HapticFeedbackConstants.KEYBOARD_TAP, HapticFeedbackConstants.FLAG_IGNORE_GLOBAL_SETTING);
                 } catch (Exception ignored) {}
 
-                if (!MessagesController.getInstance(currentAccount).premiumLocked && MessagesController.getInstance(currentAccount).captionLengthLimitPremium > codePointCount) {
+                if (!MessagesController.getInstance(currentAccount).premiumFeaturesBlocked() && MessagesController.getInstance(currentAccount).captionLengthLimitPremium > codePointCount) {
                     photoViewer.showCaptionLimitBulletin(parent);
                 }
                 return;
@@ -403,7 +402,7 @@ public class PhotoViewerCaptionEnterView extends FrameLayout implements Notifica
         captionLimitView.setVisibility(View.GONE);
         captionLimitView.setTextSize(15);
         captionLimitView.setTextColor(0xffffffff);
-        captionLimitView.setTypeface(AndroidUtilities.getTypeface("fonts/rmedium.ttf"));
+        captionLimitView.setTypeface(AndroidUtilities.bold());
         captionLimitView.setCenterAlign(true);
         addView(captionLimitView, LayoutHelper.createFrame(48, 20, Gravity.BOTTOM | Gravity.RIGHT, 3, 0, 3, 48));
         currentAccount = UserConfig.selectedAccount;
@@ -495,7 +494,7 @@ public class PhotoViewerCaptionEnterView extends FrameLayout implements Notifica
     }
 
     public void updateColors() {
-        Theme.setDrawableColor(doneDrawable, getThemedColor(Theme.key_dialogFloatingButton));
+        Theme.setDrawableColor(doneDrawable, getThemedColor(Theme.key_chat_editMediaButton));
         int color = getThemedColor(Theme.key_dialogFloatingIcon);
         int alpha = Color.alpha(color);
         Theme.setDrawableColor(checkDrawable, ColorUtils.setAlphaComponent(color, (int) (alpha * (0.58f + 0.42f * sendButtonEnabledProgress))));
@@ -619,7 +618,7 @@ public class PhotoViewerCaptionEnterView extends FrameLayout implements Notifica
                 return 771751936;
             } else if (key == Theme.key_divider) {
                 return -16777216;
-            } else if (key == Theme.key_dialogFloatingButton) {
+            } else if (key == Theme.key_chat_editMediaButton) {
                 return -10177041;
             } else if (key == Theme.key_dialogFloatingIcon) {
                 return 0xffffffff;
@@ -638,7 +637,7 @@ public class PhotoViewerCaptionEnterView extends FrameLayout implements Notifica
         if (emojiView != null) {
             return;
         }
-        emojiView = new EmojiView(null, true, false, false, getContext(), false, null, null, true, resourcesProvider);
+        emojiView = new EmojiView(null, true, false, false, getContext(), false, null, null, true, resourcesProvider, false);
         emojiView.emojiCacheType = AnimatedEmojiDrawable.CACHE_TYPE_ALERT_PREVIEW;
         emojiView.setDelegate(new EmojiView.EmojiViewDelegate() {
             @Override

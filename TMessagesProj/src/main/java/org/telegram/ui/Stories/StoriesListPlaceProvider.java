@@ -7,29 +7,30 @@ import android.graphics.Paint;
 import android.graphics.Path;
 import android.graphics.Region;
 import android.view.View;
+import android.view.ViewGroup;
 
-import org.telegram.messenger.AndroidUtilities;
 import org.telegram.messenger.MessageObject;
 import org.telegram.messenger.MessagesController;
-import org.telegram.messenger.SharedConfig;
 import org.telegram.messenger.UserConfig;
-import org.telegram.messenger.Utilities;
-import org.telegram.tgnet.TLRPC;
+import org.telegram.tgnet.tl.TL_stories;
 import org.telegram.ui.ActionBar.Theme;
 import org.telegram.ui.Cells.ChatActionCell;
 import org.telegram.ui.Cells.ChatMessageCell;
 import org.telegram.ui.Cells.DialogCell;
+import org.telegram.ui.Cells.ManageChatUserCell;
+import org.telegram.ui.Cells.ProfileChannelCell;
 import org.telegram.ui.Cells.ProfileSearchCell;
 import org.telegram.ui.Cells.ReactedUserHolderView;
 import org.telegram.ui.Cells.SharedPhotoVideoCell2;
+import org.telegram.ui.Cells.StatisticPostInfoCell;
 import org.telegram.ui.Cells.UserCell;
 import org.telegram.ui.Components.BlurredRecyclerView;
 import org.telegram.ui.Components.RecyclerListView;
-import org.telegram.ui.Components.SharedMediaLayout;
 
 public class StoriesListPlaceProvider implements StoryViewer.PlaceProvider {
 
     private final RecyclerListView recyclerListView;
+    private final ProfileChannelCell profileChannelCell;
     int[] clipPoint = new int[2];
     private boolean isHiddenArchive;
     LoadNextInterface loadNextInterface;
@@ -37,6 +38,12 @@ public class StoriesListPlaceProvider implements StoryViewer.PlaceProvider {
     public boolean onlyUnreadStories;
     public boolean onlySelfStories;
     public boolean hasPaginationParams;
+    public int addBottomClip;
+
+    public StoriesListPlaceProvider addBottomClip(int x) {
+        addBottomClip += x;
+        return this;
+    }
 
 
     public static StoriesListPlaceProvider of(RecyclerListView recyclerListView) {
@@ -47,6 +54,10 @@ public class StoriesListPlaceProvider implements StoryViewer.PlaceProvider {
         return new StoriesListPlaceProvider(recyclerListView, hiddenArchive);
     }
 
+    public static StoriesListPlaceProvider of(ProfileChannelCell profileChannelCell) {
+        return new StoriesListPlaceProvider(profileChannelCell);
+    }
+
     public StoriesListPlaceProvider with(LoadNextInterface loadNextInterface) {
         this.loadNextInterface = loadNextInterface;
         return this;
@@ -55,6 +66,12 @@ public class StoriesListPlaceProvider implements StoryViewer.PlaceProvider {
     public StoriesListPlaceProvider(RecyclerListView recyclerListView, boolean hiddenArchive) {
         this.recyclerListView = recyclerListView;
         this.isHiddenArchive = hiddenArchive;
+        this.profileChannelCell = null;
+    }
+
+    public StoriesListPlaceProvider(ProfileChannelCell profileChannelCell) {
+        this.profileChannelCell = profileChannelCell;
+        this.recyclerListView = null;
     }
 
     @Override
@@ -80,18 +97,19 @@ public class StoriesListPlaceProvider implements StoryViewer.PlaceProvider {
         holder.storyImage = null;
         holder.drawAbove = null;
 
-        if (recyclerListView == null) {
-            return false;
-        }
-
         DialogStoriesCell dialogStoriesCell = null;
-        if (recyclerListView.getParent() instanceof DialogStoriesCell) {
+        if (recyclerListView != null && recyclerListView.getParent() instanceof DialogStoriesCell) {
             dialogStoriesCell = (DialogStoriesCell) recyclerListView.getParent();
         }
-        RecyclerListView listView = recyclerListView;
+        ViewGroup listView = recyclerListView;
         if (dialogStoriesCell != null && !dialogStoriesCell.isExpanded()) {
             listView = dialogStoriesCell.listViewMini;
         }
+        if (profileChannelCell != null) {
+            listView = profileChannelCell;
+        }
+        if (listView == null) return false;
+
         for (int i = 0; i < listView.getChildCount(); i++) {
             View child = listView.getChildAt(i);
 
@@ -107,11 +125,12 @@ public class StoriesListPlaceProvider implements StoryViewer.PlaceProvider {
                     holder.clipParent = storiesCell;
                     holder.clipTop = holder.clipBottom = 0;
                     holder.alpha = 1;
-                    if (cell.isFail) {
+                    if (cell.isFail && storiesCell.isExpanded()) {
                         final Path path = new Path();
                         holder.drawClip = (canvas, bounds, alpha, opening) -> {
+                            if (opening) return;
                             path.rewind();
-                            final float t = opening ? 1f - (float) Math.pow(1f - alpha, 2) : (float) Math.pow(alpha, 2);
+                            final float t = (float) Math.pow(alpha, 2);
                             path.addCircle(bounds.right + dp(7) - dp(14) * t, bounds.bottom + dp(7) - dp(14) * t, dp(11), Path.Direction.CW);
                             canvas.clipPath(path, Region.Op.DIFFERENCE);
                         };
@@ -153,7 +172,7 @@ public class StoriesListPlaceProvider implements StoryViewer.PlaceProvider {
                 ChatActionCell cell = (ChatActionCell) child;
                 if (cell.getMessageObject().getId() == messageId) {
                     holder.view = child;
-                    TLRPC.StoryItem storyItem = cell.getMessageObject().messageOwner.media.storyItem;
+                    TL_stories.StoryItem storyItem = cell.getMessageObject().messageOwner.media.storyItem;
                     if (storyItem.noforwards) {
                         holder.avatarImage = cell.getPhotoImage();
                     } else {
@@ -164,14 +183,14 @@ public class StoriesListPlaceProvider implements StoryViewer.PlaceProvider {
                     updateClip(holder);
                     return true;
                 }
-            } else if (child instanceof SharedPhotoVideoCell2) {
+            } else if (child instanceof SharedPhotoVideoCell2 && recyclerListView != null) {
                 SharedPhotoVideoCell2 cell = (SharedPhotoVideoCell2) child;
                 MessageObject msg = cell.getMessageObject();
                 if (
                     cell.getStyle() == SharedPhotoVideoCell2.STYLE_CACHE && cell.storyId == storyId ||
                     msg != null && msg.isStory() && msg.getId() == storyId && msg.storyItem.dialogId == dialogId
                 ) {
-                    final RecyclerListView.FastScroll fastScroll = listView.getFastScroll();
+                    final RecyclerListView.FastScroll fastScroll = recyclerListView.getFastScroll();
                     final int[] loc = new int[2];
                     if (fastScroll != null) {
                         fastScroll.getLocationInWindow(loc);
@@ -180,6 +199,8 @@ public class StoriesListPlaceProvider implements StoryViewer.PlaceProvider {
                     holder.storyImage = cell.imageReceiver;
                     holder.drawAbove = (canvas, bounds, alpha, opening) -> {
                         cell.drawDuration(canvas, bounds, alpha);
+                        cell.drawViews(canvas, bounds, alpha);
+                        cell.drawPrivacy(canvas, bounds, alpha);
                         if (fastScroll != null && fastScroll.isVisible && fastScroll.getVisibility() == View.VISIBLE) {
                             canvas.saveLayerAlpha(0, 0, canvas.getWidth(), canvas.getHeight(), (int) (0xFF * alpha), Canvas.ALL_SAVE_FLAG);
                             canvas.translate(loc[0], loc[1]);
@@ -206,17 +227,31 @@ public class StoriesListPlaceProvider implements StoryViewer.PlaceProvider {
             } else if (child instanceof ReactedUserHolderView) {
                 ReactedUserHolderView cell = (ReactedUserHolderView) child;
                 if (cell.dialogId == dialogId) {
-                    holder.view = cell.avatarView;
-                    holder.params = cell.params;
-                    holder.avatarImage = cell.avatarView.getImageReceiver();
-                    holder.clipParent = (View) cell.getParent();
-                    holder.alpha = cell.getAlpha() * cell.getAlphaInternal();
-                    if (holder.alpha < 1) {
-                        holder.bgPaint = new Paint(Paint.ANTI_ALIAS_FLAG);
-                        holder.bgPaint.setColor(Theme.getColor(Theme.key_dialogBackground, cell.getResourcesProvider()));
+                    final boolean hasStoryPreview = cell.storyPreviewView != null && cell.storyPreviewView.getImageReceiver() != null && cell.storyPreviewView.getImageReceiver().getImageDrawable() != null;
+                    if (cell.storyId == storyId && hasStoryPreview) {
+                        holder.view = cell.storyPreviewView;
+                        holder.storyImage = cell.storyPreviewView.getImageReceiver();
+                        holder.clipParent = (View) cell.getParent();
+                        holder.alpha = cell.getAlpha() * cell.getAlphaInternal();
+                        if (holder.alpha < 1) {
+                            holder.bgPaint = new Paint(Paint.ANTI_ALIAS_FLAG);
+                            holder.bgPaint.setColor(Theme.getColor(Theme.key_dialogBackground, cell.getResourcesProvider()));
+                        }
+                        updateClip(holder);
+                        return true;
+                    } else if (!hasStoryPreview) {
+                        holder.view = cell.avatarView;
+                        holder.params = cell.params;
+                        holder.avatarImage = cell.avatarView.getImageReceiver();
+                        holder.clipParent = (View) cell.getParent();
+                        holder.alpha = cell.getAlpha() * cell.getAlphaInternal();
+                        if (holder.alpha < 1) {
+                            holder.bgPaint = new Paint(Paint.ANTI_ALIAS_FLAG);
+                            holder.bgPaint.setColor(Theme.getColor(Theme.key_dialogBackground, cell.getResourcesProvider()));
+                        }
+                        updateClip(holder);
+                        return true;
                     }
-                    updateClip(holder);
-                    return true;
                 }
             } else if (child instanceof ProfileSearchCell) {
                 ProfileSearchCell cell = (ProfileSearchCell) child;
@@ -224,6 +259,28 @@ public class StoriesListPlaceProvider implements StoryViewer.PlaceProvider {
                     holder.view = cell;
                     holder.params = cell.avatarStoryParams;
                     holder.avatarImage = cell.avatarImage;
+                    holder.clipParent = (View) cell.getParent();
+                    holder.alpha = 1;
+                    updateClip(holder);
+                    return true;
+                }
+            } else if (child instanceof StatisticPostInfoCell) {
+                StatisticPostInfoCell cell = (StatisticPostInfoCell) child;
+                if (cell.getPostInfo().getId() == storyId) {
+                    holder.view = cell.getImageView();
+                    holder.params = cell.getStoryAvatarParams();
+                    holder.storyImage = cell.getImageView().getImageReceiver();
+                    holder.clipParent = (View) cell.getParent();
+                    holder.alpha = 1;
+                    updateClip(holder);
+                    return true;
+                }
+            } else if (child instanceof ManageChatUserCell) {
+                ManageChatUserCell cell = (ManageChatUserCell) child;
+                if (cell.getStoryItem() != null && cell.getStoryItem().dialogId == dialogId && cell.getStoryItem().messageId == messageId) {
+                    holder.view = cell.getAvatarImageView();
+                    holder.params = cell.getStoryAvatarParams();
+                    holder.avatarImage = cell.getAvatarImageView().getImageReceiver();
                     holder.clipParent = (View) cell.getParent();
                     holder.alpha = 1;
                     updateClip(holder);
@@ -241,13 +298,13 @@ public class StoriesListPlaceProvider implements StoryViewer.PlaceProvider {
         if (holder.clipParent instanceof ClippedView) {
             ((ClippedView) holder.clipParent).updateClip(clipPoint);
             holder.clipTop = clipPoint[0];
-            holder.clipBottom = clipPoint[1];
+            holder.clipBottom = clipPoint[1] - addBottomClip;
         } else if (holder.clipParent instanceof BlurredRecyclerView) {
             holder.clipTop = ((BlurredRecyclerView) holder.clipParent).blurTopPadding;
-            holder.clipBottom = holder.clipParent.getMeasuredHeight() - holder.clipParent.getPaddingBottom();
+            holder.clipBottom = holder.clipParent.getMeasuredHeight() - holder.clipParent.getPaddingBottom() - addBottomClip;
         } else {
             holder.clipTop = holder.clipParent.getPaddingTop();
-            holder.clipBottom = holder.clipParent.getMeasuredHeight() - holder.clipParent.getPaddingBottom();
+            holder.clipBottom = holder.clipParent.getMeasuredHeight() - holder.clipParent.getPaddingBottom() - addBottomClip;
         }
     }
 

@@ -11,7 +11,6 @@ import android.graphics.DashPathEffect;
 import android.graphics.Paint;
 import android.os.Build;
 import android.util.Log;
-import android.view.GestureDetector;
 import android.view.HapticFeedbackConstants;
 import android.view.MotionEvent;
 import android.view.View;
@@ -64,13 +63,17 @@ public class EntityView extends FrameLayout {
         default void onEntityDragMultitouchEnd() {}
         default void onEntityDragEnd(boolean delete) {}
         default void onEntityDragTrash(boolean enter) {}
+        default void onEntityHandleTouched() {}
+        default boolean isEntityDeletable() {
+            return true;
+        }
     }
 
     private float previousLocationX,  previousLocationY;
     private float previousLocationX2, previousLocationY2;
     private float previousLocationCX,  previousLocationCY;
-    private boolean hasPanned = false;
-    private boolean hasReleased = false;
+    public boolean hasPanned = false;
+    public boolean hasReleased = false;
     private boolean hasTransformed = false;
     private boolean announcedDrag = false;
     private boolean announcedMultitouchDrag = false;
@@ -139,6 +142,10 @@ public class EntityView extends FrameLayout {
         return 100f;
     }
 
+    protected float getMinScale() {
+        return 0f;
+    }
+
     public float getScale() {
         return getScaleX();
     }
@@ -180,7 +187,7 @@ public class EntityView extends FrameLayout {
                     scale(d / pd);
                 }
                 double angleDiff = Math.atan2(y1 - y2, x1 - x2) - Math.atan2(previousLocationY - previousLocationY2, previousLocationX - previousLocationX2);
-                rotate(this.angle + (float) Math.toDegrees(angleDiff) - delegate.getCropRotation());
+                rotate(this.angle + (float) Math.toDegrees(angleDiff));
             }
 
             previousLocationX = x1;
@@ -219,7 +226,11 @@ public class EntityView extends FrameLayout {
                 delegate.onEntityDraggedBottom(position.y + getHeight() / 2f * scale > ((View) getParent()).getHeight() - dp(64 + 50));
             }
 
-            updateTrash(!multitouch && MathUtils.distance(x, y,  ((View) getParent()).getWidth() / 2f, ((View) getParent()).getHeight() - dp(76)) < dp(32));
+            updateTrash(
+                (delegate == null || delegate.isEntityDeletable()) &&
+                    !multitouch &&
+                    MathUtils.distance(x, y,  ((View) getParent()).getWidth() / 2f, ((View) getParent()).getHeight() - dp(76)) < dp(32)
+            );
 
             bounce.setPressed(false);
 
@@ -228,13 +239,13 @@ public class EntityView extends FrameLayout {
         return false;
     }
 
-    private void onTouchUp() {
+    private void onTouchUp(boolean canceled) {
         if (announcedDrag) {
             delegate.onEntityDragEnd(announcedTrash);
             announcedDrag = false;
         }
         announcedMultitouchDrag = false;
-        if (!recognizedLongPress && !hasPanned && !hasTransformed && !announcedSelection && delegate != null) {
+        if (!canceled && !recognizedLongPress && !hasPanned && !hasTransformed && !announcedSelection && delegate != null) {
             delegate.onEntitySelected(this);
         }
         if (hasPanned && delegate != null) {
@@ -379,7 +390,7 @@ public class EntityView extends FrameLayout {
 //            case MotionEvent.ACTION_POINTER_UP:
             case MotionEvent.ACTION_UP:
             case MotionEvent.ACTION_CANCEL: {
-                onTouchUp();
+                onTouchUp(action == MotionEvent.ACTION_CANCEL);
                 bounce.setPressed(false);
                 handled = true;
                 if (selectionView != null) {
@@ -482,7 +493,7 @@ public class EntityView extends FrameLayout {
         if (parent != null) {
             int newStickyX = STICKY_NONE;
             if (!lastIsMultitouch) {
-                if (Math.abs(position.x - parent.getMeasuredWidth() / 2f) <= dp(STICKY_TRIGGER_DP) && position.y < parent.getMeasuredHeight() - dp(112 + 64)) {
+                if (Math.abs(position.x - parent.getMeasuredWidth() / 2f) <= dp(STICKY_TRIGGER_DP) && position.y < parent.getMeasuredHeight() - dp(112)) {
                     newStickyX = STICKY_CENTER;
                 } else if (Math.abs(position.x - (width() / 2f + getStickyPaddingLeft()) * getScaleX() - dp(STICKY_PADDING_X_DP)) <= dp(STICKY_TRIGGER_DP)) {
                     newStickyX = STICKY_START;
@@ -583,15 +594,20 @@ public class EntityView extends FrameLayout {
     public void scale(float scale) {
         this.scale *= scale;
         float newScale = Math.max(this.scale, 0.1f);
-        newScale = Math.min(newScale, getMaxScale());
-        if (getScale() < getMaxScale() && newScale >= getMaxScale()) {
+        newScale = Utilities.clamp(newScale, getMaxScale(), getMinScale());
+        if (allowHaptic() && (newScale >= getMaxScale() || newScale <= getMinScale())) {
             try {
                 performHapticFeedback(HapticFeedbackConstants.KEYBOARD_TAP, HapticFeedbackConstants.FLAG_IGNORE_VIEW_SETTING);
-            } catch (Exception ignore) {}
+            } catch (Exception ignore) {
+            }
         }
         setScaleX(newScale);
         setScaleY(newScale);
 //        updateSelectionView();
+    }
+
+    protected boolean allowHaptic() {
+        return true;
     }
 
     private float angle;
@@ -700,7 +716,7 @@ public class EntityView extends FrameLayout {
         updateSelectionView();
     }
 
-    protected Rect getSelectionBounds() {
+    public Rect getSelectionBounds() {
         return new Rect(0, 0, 0, 0);
     }
 
@@ -763,6 +779,10 @@ public class EntityView extends FrameLayout {
             selectAnimator.setInterpolator(CubicBezierInterpolator.EASE_OUT_QUINT);
             selectAnimator.start();
         }
+    }
+
+    public boolean isSelectedProgress() {
+        return isSelected() || selectT > 0;
     }
 
     private ViewGroup lastSelectionContainer;
@@ -879,6 +899,9 @@ public class EntityView extends FrameLayout {
                         if (getParent() instanceof EntitiesContainerView) {
                             ((EntitiesContainerView) getParent()).invalidate();
                         }
+                        if (handle == SELECTION_WHOLE_HANDLE && allowLongPressOnSelected()) {
+                            AndroidUtilities.runOnUIThread(longPressRunnable, ViewConfiguration.getLongPressTimeout());
+                        }
                     }
                 }
                 break;
@@ -892,6 +915,9 @@ public class EntityView extends FrameLayout {
                         float ty = y - previousLocationY;
 
                         if (hasTransformed || Math.abs(tx) > dp(2) || Math.abs(ty) > dp(2)) {
+                            if (!hasTransformed && delegate != null) {
+                                delegate.onEntityHandleTouched();
+                            }
                             hasTransformed = true;
                             AndroidUtilities.cancelRunOnUIThread(longPressRunnable);
 
@@ -910,7 +936,7 @@ public class EntityView extends FrameLayout {
                                 angle = (float) Math.atan2(y - pos[1], x - pos[0]);
                             }
 
-                            rotate((float) Math.toDegrees(angle) - delegate.getCropRotation());
+                            rotate((float) Math.toDegrees(angle));
 
                             previousLocationX = x;
                             previousLocationY = y;
@@ -921,10 +947,9 @@ public class EntityView extends FrameLayout {
                 }
                 break;
 
-//                case MotionEvent.ACTION_POINTER_UP:
                 case MotionEvent.ACTION_UP:
                 case MotionEvent.ACTION_CANCEL: {
-                    onTouchUp();
+                    onTouchUp(action == MotionEvent.ACTION_CANCEL);
                     currentHandle = 0;
                     handled = true;
                     hide(false);
@@ -948,6 +973,10 @@ public class EntityView extends FrameLayout {
         protected float getShowAlpha() {
             return showAlpha.set(shown);
         }
+    }
+
+    public boolean allowLongPressOnSelected() {
+        return false;
     }
 
     private float trashScale = 1f;
@@ -980,16 +1009,28 @@ public class EntityView extends FrameLayout {
         }
     }
 
+    public boolean trashCenter() {
+        return false;
+    }
+
+    protected float getBounceScale() {
+        return .04f;
+    }
+
     @Override
     protected void dispatchDraw(Canvas canvas) {
-        final float scale = bounce.getScale(.05f);
+        final float scale = bounce.getScale(getBounceScale());
         canvas.save();
         canvas.scale(scale, scale, getWidth() / 2f, getHeight() / 2f);
         if (getParent() instanceof View) {
             View p = (View) getParent();
-            float px = p.getWidth() / 2f - getX();
-            float py = p.getHeight() - dp(76) - getY();
-            canvas.scale(trashScale, trashScale, px, py);
+            if (trashCenter()) {
+                canvas.scale(trashScale, trashScale, getWidth() / 2f, getHeight() / 2f);
+            } else {
+                float px = p.getWidth() / 2f - getX();
+                float py = p.getHeight() - dp(76) - getY();
+                canvas.scale(trashScale, trashScale, px, py);
+            }
         }
         super.dispatchDraw(canvas);
         canvas.restore();

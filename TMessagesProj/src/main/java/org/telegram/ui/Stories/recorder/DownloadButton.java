@@ -39,6 +39,7 @@ import org.telegram.messenger.MessageObject;
 import org.telegram.messenger.NotificationCenter;
 import org.telegram.messenger.R;
 import org.telegram.messenger.Utilities;
+import org.telegram.messenger.VideoEncodingService;
 import org.telegram.tgnet.TLRPC;
 import org.telegram.ui.ActionBar.Theme;
 import org.telegram.ui.Components.AnimatedFloat;
@@ -145,6 +146,17 @@ public class DownloadButton extends ImageView {
             preparing = true;
             prepare.run(this::onClickInternal);
         }
+        updateImage();
+        if (prepare == null) {
+            onClickInternal();
+        }
+    }
+
+    private void onClickInternal() {
+        if (!preparing || currentEntry == null) {
+            return;
+        }
+        preparing = false;
         if (currentEntry.wouldBeVideo()) {
             downloadingVideo = true;
             toast = new PreparingVideoToast(getContext());
@@ -161,24 +173,7 @@ public class DownloadButton extends ImageView {
                 updateImage();
             });
             container.addView(toast);
-        } else {
-            downloadingVideo = false;
-        }
-        updateImage();
-        if (prepare != null) {
-            preparing = true;
-            prepare.run(this::onClickInternal);
-        } else {
-            onClickInternal();
-        }
-    }
 
-    private void onClickInternal() {
-        if (!preparing || currentEntry == null) {
-            return;
-        }
-        preparing = false;
-        if (currentEntry.wouldBeVideo()) {
             final File file = AndroidUtilities.generateVideoPath();
             buildingVideo = new BuildingVideo(currentAccount, currentEntry, file, () -> {
                 if (!downloading || currentEntry == null) {
@@ -207,6 +202,7 @@ public class DownloadButton extends ImageView {
                 updateImage();
             });
         } else {
+            downloadingVideo = false;
             final File file = AndroidUtilities.generatePicturePath(false, "png");
             if (file == null) {
                 toast.setDone(R.raw.error, LocaleController.getString("UnknownError"), 3500);
@@ -348,6 +344,7 @@ public class DownloadButton extends ImageView {
 
                     if (finalSize > 0) {
                         onDone.run();
+                        VideoEncodingService.stop();
                         stop(false);
                     }
                 }
@@ -385,6 +382,10 @@ public class DownloadButton extends ImageView {
         private float doneLayoutWidth, doneLayoutLeft;
 
         public PreparingVideoToast(Context context) {
+            this(context, LocaleController.getString(R.string.PreparingSticker));
+        }
+
+        public PreparingVideoToast(Context context, String text) {
             super(context);
 
             dimPaint.setColor(0x5a000000);
@@ -404,7 +405,7 @@ public class DownloadButton extends ImageView {
             textPaint.setTextSize(dp(14));
             textPaint2.setTextSize(dpf2(14.66f));
 
-            preparingLayout = new StaticLayout(LocaleController.getString("PreparingVideo"), textPaint, AndroidUtilities.displaySize.x, Layout.Alignment.ALIGN_NORMAL, 1f, 0, false);
+            preparingLayout = new StaticLayout(text, textPaint, AndroidUtilities.displaySize.x, Layout.Alignment.ALIGN_NORMAL, 1f, 0, false);
             preparingLayoutWidth = preparingLayout.getLineCount() > 0 ? preparingLayout.getLineWidth(0) : 0;
             preparingLayoutLeft = preparingLayout.getLineCount() > 0 ? preparingLayout.getLineLeft(0) : 0;
 

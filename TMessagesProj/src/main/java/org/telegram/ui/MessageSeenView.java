@@ -1,19 +1,11 @@
 package org.telegram.ui;
 
 import android.content.Context;
-import android.graphics.Canvas;
-import android.graphics.ColorFilter;
-import android.graphics.PixelFormat;
 import android.graphics.PorterDuff;
 import android.graphics.PorterDuffColorFilter;
 import android.graphics.Rect;
 import android.graphics.drawable.Drawable;
-import android.text.SpannableStringBuilder;
-import android.text.Spanned;
 import android.text.TextUtils;
-import android.text.style.DynamicDrawableSpan;
-import android.text.style.ImageSpan;
-import android.util.Log;
 import android.util.Pair;
 import android.util.TypedValue;
 import android.view.Gravity;
@@ -25,7 +17,6 @@ import android.widget.ImageView;
 import android.widget.TextView;
 
 import androidx.annotation.NonNull;
-import androidx.annotation.Nullable;
 import androidx.core.content.ContextCompat;
 import androidx.recyclerview.widget.LinearLayoutManager;
 import androidx.recyclerview.widget.RecyclerView;
@@ -40,13 +31,11 @@ import org.telegram.messenger.MessagesController;
 import org.telegram.messenger.NotificationCenter;
 import org.telegram.messenger.R;
 import org.telegram.messenger.UserConfig;
-import org.telegram.messenger.UserObject;
 import org.telegram.tgnet.ConnectionsManager;
 import org.telegram.tgnet.TLObject;
 import org.telegram.tgnet.TLRPC;
 import org.telegram.ui.ActionBar.SimpleTextView;
 import org.telegram.ui.ActionBar.Theme;
-import org.telegram.ui.Components.AnimatedEmojiDrawable;
 import org.telegram.ui.Components.AvatarDrawable;
 import org.telegram.ui.Components.AvatarsDrawable;
 import org.telegram.ui.Components.AvatarsImageView;
@@ -56,6 +45,7 @@ import org.telegram.ui.Components.HideViewAfterAnimation;
 import org.telegram.ui.Components.LayoutHelper;
 import org.telegram.ui.Components.MessageSeenCheckDrawable;
 import org.telegram.ui.Components.RecyclerListView;
+import org.telegram.ui.Components.StatusBadgeComponent;
 
 import java.util.ArrayList;
 import java.util.HashMap;
@@ -361,7 +351,7 @@ public class MessageSeenView extends FrameLayout {
         SimpleTextView nameView;
         TextView readView;
         AvatarDrawable avatarDrawable = new AvatarDrawable();
-        AnimatedEmojiDrawable.SwapAnimatedEmojiDrawable rightDrawable;
+        StatusBadgeComponent statusBadgeComponent;
 
         TLObject object;
 
@@ -379,7 +369,7 @@ public class MessageSeenView extends FrameLayout {
             nameView.setTextColor(Theme.getColor(Theme.key_actionBarDefaultSubmenuItem));
             nameView.setGravity(LocaleController.isRTL ? Gravity.RIGHT : Gravity.LEFT);
 
-            rightDrawable = new AnimatedEmojiDrawable.SwapAnimatedEmojiDrawable(this, AndroidUtilities.dp(18));
+            statusBadgeComponent = new StatusBadgeComponent(this);
             nameView.setDrawablePadding(AndroidUtilities.dp(3));
 
             readView = new TextView(context);
@@ -411,7 +401,7 @@ public class MessageSeenView extends FrameLayout {
             updateStatus(false);
 
             if (object != null) {
-                avatarDrawable.setInfo(object);
+                avatarDrawable.setInfo(currentAccount, object);
                 ImageLocation imageLocation = ImageLocation.getForUserOrChat(object, ImageLocation.TYPE_SMALL);
                 avatarImageView.setImage(imageLocation, "50_50", avatarDrawable, object);
                 nameView.setText(ContactsController.formatName(object));
@@ -450,35 +440,20 @@ public class MessageSeenView extends FrameLayout {
         }
 
         private void updateStatus(boolean animated) {
-            TLRPC.User currentUser = object instanceof TLRPC.User ? (TLRPC.User) object : null;
-            if (currentUser == null) {
-                return;
-            }
-            Long documentId = UserObject.getEmojiStatusDocumentId(currentUser);
-            if (documentId == null) {
-                nameView.setRightDrawable(null);
-                rightDrawable.set((Drawable) null, animated);
-            } else {
-                nameView.setRightDrawable(rightDrawable);
-                rightDrawable.set(documentId, animated);
-            }
+            nameView.setRightDrawable(statusBadgeComponent.updateDrawable(object, Theme.getColor(Theme.key_chats_verifiedBackground), animated));
         }
 
         @Override
         protected void onAttachedToWindow() {
             super.onAttachedToWindow();
-            if (rightDrawable != null) {
-                rightDrawable.attach();
-            }
+            statusBadgeComponent.onAttachedToWindow();
             NotificationCenter.getInstance(currentAccount).addObserver(this, NotificationCenter.userEmojiStatusUpdated);
         }
 
         @Override
         protected void onDetachedFromWindow() {
             super.onDetachedFromWindow();
-            if (rightDrawable != null) {
-                rightDrawable.detach();
-            }
+            statusBadgeComponent.onDetachedFromWindow();
             NotificationCenter.getInstance(currentAccount).removeObserver(this, NotificationCenter.userEmojiStatusUpdated);
         }
     }

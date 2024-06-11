@@ -97,7 +97,31 @@ public class ChatObject {
     }
 
     public static boolean canSendAnyMedia(TLRPC.Chat currentChat) {
-        return canSendPhoto(currentChat) || canSendVideo(currentChat) || canSendRoundVideo(currentChat)|| canSendVoice(currentChat) || canSendDocument(currentChat) || canSendMusic(currentChat) || canSendStickers(currentChat);
+        return canSendPhoto(currentChat) || canSendVideo(currentChat) || canSendRoundVideo(currentChat) || canSendVoice(currentChat) || canSendDocument(currentChat) || canSendMusic(currentChat) || canSendStickers(currentChat);
+    }
+
+    public static boolean isIgnoredChatRestrictionsForBoosters(TLRPC.ChatFull chatFull) {
+        return chatFull != null && chatFull.boosts_unrestrict > 0 && (chatFull.boosts_applied - chatFull.boosts_unrestrict) >= 0;
+    }
+
+    public static boolean isIgnoredChatRestrictionsForBoosters(TLRPC.Chat chat) {
+        if (chat != null) {
+            TLRPC.ChatFull chatFull = MessagesController.getInstance(UserConfig.selectedAccount).getChatFull(chat.id);
+            return isIgnoredChatRestrictionsForBoosters(chatFull);
+        }
+        return false;
+    }
+
+    public static boolean isPossibleRemoveChatRestrictionsByBoosts(TLRPC.Chat chat) {
+        if (chat != null) {
+            TLRPC.ChatFull chatFull = MessagesController.getInstance(UserConfig.selectedAccount).getChatFull(chat.id);
+            return isPossibleRemoveChatRestrictionsByBoosts(chatFull);
+        }
+        return false;
+    }
+
+    public static boolean isPossibleRemoveChatRestrictionsByBoosts(TLRPC.ChatFull chatFull) {
+        return chatFull != null && chatFull.boosts_unrestrict > 0;
     }
 
     public static String getAllowedSendString(TLRPC.Chat chat) {
@@ -1568,6 +1592,51 @@ public class ChatObject {
         return chat != null && (getBannedRight(chat.banned_rights, action) || getBannedRight(chat.default_banned_rights, action));
     }
 
+    public static boolean canUserDoAdminAction(TLRPC.TL_chatAdminRights admin_rights, int action) {
+        if (admin_rights != null) {
+            boolean value;
+            switch (action) {
+                case ACTION_PIN:
+                    value = admin_rights.pin_messages;
+                    break;
+                case ACTION_MANAGE_TOPICS:
+                    value = admin_rights.manage_topics;
+                    break;
+                case ACTION_CHANGE_INFO:
+                    value = admin_rights.change_info;
+                    break;
+                case ACTION_INVITE:
+                    value = admin_rights.invite_users;
+                    break;
+                case ACTION_ADD_ADMINS:
+                    value = admin_rights.add_admins;
+                    break;
+                case ACTION_POST:
+                    value = admin_rights.post_messages;
+                    break;
+                case ACTION_EDIT_MESSAGES:
+                    value = admin_rights.edit_messages;
+                    break;
+                case ACTION_DELETE_MESSAGES:
+                    value = admin_rights.delete_messages;
+                    break;
+                case ACTION_BLOCK_USERS:
+                    value = admin_rights.ban_users;
+                    break;
+                case ACTION_MANAGE_CALLS:
+                    value = admin_rights.manage_call;
+                    break;
+                default:
+                    value = false;
+                    break;
+            }
+            if (value) {
+                return true;
+            }
+        }
+        return false;
+    }
+
     public static boolean canUserDoAdminAction(TLRPC.Chat chat, int action) {
         if (chat == null) {
             return false;
@@ -1619,6 +1688,43 @@ public class ChatObject {
         return false;
     }
 
+    public static boolean canUserDoAction(TLRPC.Chat chat, TLRPC.ChannelParticipant participant, int action) {
+        if (chat == null) {
+            return true;
+        }
+        if (participant == null) {
+            return false;
+        }
+        if (canUserDoAdminAction(participant.admin_rights, action)) {
+            return true;
+        }
+        if (getBannedRight(participant.banned_rights, action)) {
+            return false;
+        }
+        if (isBannableAction(action)) {
+            if (participant.admin_rights != null && !isAdminAction(action)) {
+                return true;
+            }
+            if (chat.default_banned_rights == null && (
+                    chat instanceof TLRPC.TL_chat_layer92 ||
+                            chat instanceof TLRPC.TL_chat_old ||
+                            chat instanceof TLRPC.TL_chat_old2 ||
+                            chat instanceof TLRPC.TL_channel_layer92 ||
+                            chat instanceof TLRPC.TL_channel_layer77 ||
+                            chat instanceof TLRPC.TL_channel_layer72 ||
+                            chat instanceof TLRPC.TL_channel_layer67 ||
+                            chat instanceof TLRPC.TL_channel_layer48 ||
+                            chat instanceof TLRPC.TL_channel_old)) {
+                return true;
+            }
+            if (chat.default_banned_rights == null || getBannedRight(chat.default_banned_rights, action)) {
+                return false;
+            }
+            return true;
+        }
+        return false;
+    }
+
     public static boolean canUserDoAction(TLRPC.Chat chat, int action) {
         if (chat == null) {
             return true;
@@ -1665,6 +1771,16 @@ public class ChatObject {
         return chat == null || chat instanceof TLRPC.TL_chatEmpty || chat instanceof TLRPC.TL_chatForbidden || chat instanceof TLRPC.TL_channelForbidden || chat.left || chat.kicked || chat.deactivated;
     }
 
+    public static boolean isInChat(TLRPC.Chat chat) {
+        if (chat == null || chat instanceof TLRPC.TL_chatEmpty || chat instanceof TLRPC.TL_chatForbidden || chat instanceof TLRPC.TL_channelForbidden) {
+            return false;
+        }
+        if (chat.left || chat.kicked || chat.deactivated) {
+            return false;
+        }
+        return true;
+    }
+
     public static boolean canSendAsPeers(TLRPC.Chat chat) {
         return ChatObject.isChannel(chat) && chat.megagroup && (ChatObject.isPublic(chat) || chat.has_geo || chat.has_link);
     }
@@ -1685,8 +1801,20 @@ public class ChatObject {
         return isChannel(chat) && !isMegagroup(chat);
     }
 
+    public static boolean isBoostSupported(TLRPC.Chat chat) {
+        return isChannelAndNotMegaGroup(chat) || isMegagroup(chat);
+    }
+
+    public static boolean isBoosted(TLRPC.ChatFull chatFull) {
+        return chatFull != null && chatFull.boosts_applied > 0;
+    }
+
     public static boolean isForum(TLRPC.Chat chat) {
         return chat != null && chat.forum;
+    }
+
+    public static boolean hasStories(TLRPC.Chat chat) {
+        return chat != null && MessagesController.getInstance(UserConfig.selectedAccount).getStoriesController().hasStories(-chat.id);
     }
 
     public static boolean isMegagroup(int currentAccount, long chatId) {
@@ -1715,49 +1843,79 @@ public class ChatObject {
     }
 
     public static boolean canSendStickers(TLRPC.Chat chat) {
+        if (isIgnoredChatRestrictionsForBoosters(chat)) {
+            return true;
+        }
         return canUserDoAction(chat, ACTION_SEND_STICKERS);
     }
 
     public static boolean canSendEmbed(TLRPC.Chat chat) {
+        if (isIgnoredChatRestrictionsForBoosters(chat)) {
+            return true;
+        }
         return canUserDoAction(chat, ACTION_EMBED_LINKS);
     }
 
-    //    public static boolean canSendMedia(TLRPC.Chat chat) {
-//        return canUserDoAction(chat, ACTION_SEND_MEDIA);
-//    }
     public static boolean canSendPhoto(TLRPC.Chat chat) {
+        if (isIgnoredChatRestrictionsForBoosters(chat)) {
+            return true;
+        }
         return canUserDoAction(chat, ACTION_SEND_PHOTO);
     }
 
     public static boolean canSendVideo(TLRPC.Chat chat) {
+        if (isIgnoredChatRestrictionsForBoosters(chat)) {
+            return true;
+        }
         return canUserDoAction(chat, ACTION_SEND_VIDEO);
     }
 
     public static boolean canSendMusic(TLRPC.Chat chat) {
+        if (isIgnoredChatRestrictionsForBoosters(chat)) {
+            return true;
+        }
         return canUserDoAction(chat, ACTION_SEND_MUSIC);
     }
 
     public static boolean canSendDocument(TLRPC.Chat chat) {
+        if (isIgnoredChatRestrictionsForBoosters(chat)) {
+            return true;
+        }
         return canUserDoAction(chat, ACTION_SEND_DOCUMENTS);
     }
 
     public static boolean canSendVoice(TLRPC.Chat chat) {
+        if (isIgnoredChatRestrictionsForBoosters(chat)) {
+            return true;
+        }
         return canUserDoAction(chat, ACTION_SEND_VOICE);
     }
 
     public static boolean canSendRoundVideo(TLRPC.Chat chat) {
+        if (isIgnoredChatRestrictionsForBoosters(chat)) {
+            return true;
+        }
         return canUserDoAction(chat, ACTION_SEND_ROUND);
     }
 
     public static boolean canSendPolls(TLRPC.Chat chat) {
+        if (isIgnoredChatRestrictionsForBoosters(chat)) {
+            return true;
+        }
         return canUserDoAction(chat, ACTION_SEND_POLLS);
     }
 
     public static boolean canSendMessages(TLRPC.Chat chat) {
+        if (isIgnoredChatRestrictionsForBoosters(chat)) {
+            return true;
+        }
         return canUserDoAction(chat, ACTION_SEND);
     }
 
     public static boolean canSendPlain(TLRPC.Chat chat) {
+        if (isIgnoredChatRestrictionsForBoosters(chat)) {
+            return true;
+        }
         return canUserDoAction(chat, ACTION_SEND_PLAIN);
     }
 
@@ -1816,11 +1974,11 @@ public class ChatObject {
     public static boolean canManageTopic(int currentAccount, TLRPC.Chat chat, TLRPC.TL_forumTopic topic) {
         return canManageTopics(chat) || isMyTopic(currentAccount, topic);
     }
-    public static boolean canManageTopic(int currentAccount, TLRPC.Chat chat, int topicId) {
+    public static boolean canManageTopic(int currentAccount, TLRPC.Chat chat, long topicId) {
         return canManageTopics(chat) || isMyTopic(currentAccount, chat, topicId);
     }
 
-    public static boolean canDeleteTopic(int currentAccount, TLRPC.Chat chat, int topicId) {
+    public static boolean canDeleteTopic(int currentAccount, TLRPC.Chat chat, long topicId) {
         if (topicId == 1) {
             // general topic can't be deleted
             return false;
@@ -1839,11 +1997,11 @@ public class ChatObject {
         return topic != null && (topic.my || topic.from_id instanceof TLRPC.TL_peerUser && topic.from_id.user_id == UserConfig.getInstance(currentAccount).clientUserId);
     }
 
-    public static boolean isMyTopic(int currentAccount, TLRPC.Chat chat, int topicId) {
+    public static boolean isMyTopic(int currentAccount, TLRPC.Chat chat, long topicId) {
         return chat != null && chat.forum && isMyTopic(currentAccount, chat.id, topicId);
     }
 
-    public static boolean isMyTopic(int currentAccount, long chatId, int topicId) {
+    public static boolean isMyTopic(int currentAccount, long chatId, long topicId) {
         return isMyTopic(currentAccount, MessagesController.getInstance(currentAccount).getTopicsController().findTopic(chatId, topicId));
     }
 
@@ -2076,4 +2234,34 @@ public class ChatObject {
             }
         }
     }
+
+    public static MessagesController.PeerColor getPeerColorForAvatar(int currentAccount, TLRPC.Chat chat) {
+//        if (chat != null && chat.profile_color != null && chat.profile_color.color >= 0 && MessagesController.getInstance(currentAccount).profilePeerColors != null) {
+//            return MessagesController.getInstance(currentAccount).profilePeerColors.getColor(chat.profile_color.color);
+//        }
+        return null;
+    }
+
+    public static int getColorId(TLRPC.Chat chat) {
+        if (chat == null) return 0;
+        if (chat.color != null && (chat.color.flags & 1) != 0) return chat.color.color;
+        return (int) (chat.id % 7);
+    }
+
+    public static long getEmojiId(TLRPC.Chat chat) {
+        if (chat != null && chat.color != null && (chat.color.flags & 2) != 0) return chat.color.background_emoji_id;
+        return 0;
+    }
+
+    public static int getProfileColorId(TLRPC.Chat chat) {
+        if (chat == null) return 0;
+        if (chat.profile_color != null && (chat.profile_color.flags & 1) != 0) return chat.profile_color.color;
+        return -1;
+    }
+
+    public static long getProfileEmojiId(TLRPC.Chat chat) {
+        if (chat != null && chat.profile_color != null && (chat.profile_color.flags & 2) != 0) return chat.profile_color.background_emoji_id;
+        return 0;
+    }
+
 }

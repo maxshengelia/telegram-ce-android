@@ -2,7 +2,6 @@ package org.telegram.ui.Stories.recorder;
 
 import static org.telegram.messenger.AndroidUtilities.dp;
 
-import android.animation.AnimatorListenerAdapter;
 import android.animation.ValueAnimator;
 import android.content.Context;
 import android.graphics.Canvas;
@@ -11,21 +10,19 @@ import android.graphics.RectF;
 import android.text.Layout;
 import android.text.StaticLayout;
 import android.text.TextPaint;
-import android.view.GestureDetector;
 import android.view.MotionEvent;
 import android.view.VelocityTracker;
 import android.view.View;
 import android.view.ViewConfiguration;
-import android.widget.Scroller;
+
+import androidx.core.graphics.ColorUtils;
 
 import org.telegram.messenger.AndroidUtilities;
 import org.telegram.messenger.LocaleController;
-import org.telegram.messenger.R;
 import org.telegram.messenger.Utilities;
-import org.telegram.ui.Components.AnimatedFloat;
 import org.telegram.ui.Components.CubicBezierInterpolator;
 
-public class PhotoVideoSwitcherView extends View {
+public class PhotoVideoSwitcherView extends View implements FlashViews.Invertable {
 
     private TextPaint textPaint = new TextPaint(Paint.ANTI_ALIAS_FLAG);
     private Paint selectorPaint = new Paint(Paint.ANTI_ALIAS_FLAG);
@@ -46,9 +43,9 @@ public class PhotoVideoSwitcherView extends View {
         super(context);
 
         selectorPaint.setColor(0x32ffffff);
-
         textPaint.setColor(0xffffffff);
-        textPaint.setTypeface(AndroidUtilities.getTypeface(AndroidUtilities.TYPEFACE_ROBOTO_MEDIUM));
+
+        textPaint.setTypeface(AndroidUtilities.bold());
         textPaint.setTextSize(AndroidUtilities.dpf2(14));
         textPaint.setShadowLayer(AndroidUtilities.dpf2(1), 0, AndroidUtilities.dpf2(0.4f), 0x33000000);
 
@@ -244,5 +241,10 @@ public class PhotoVideoSwitcherView extends View {
 
     public boolean scrolledEnough() {
         return scrolledEnough || (scrolledEnough = Math.abs(mode - modeAtTouchDown) > .1f);
+    }
+
+    public void setInvert(float invert) {
+        selectorPaint.setColor(ColorUtils.blendARGB(0x32ffffff, 0x20000000, invert));
+        textPaint.setColor(ColorUtils.blendARGB(0xffffffff, 0xff000000, invert));
     }
 }

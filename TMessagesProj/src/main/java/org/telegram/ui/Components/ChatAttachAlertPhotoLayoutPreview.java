@@ -123,7 +123,7 @@ public class ChatAttachAlertPhotoLayoutPreview extends ChatAttachAlert.AttachAle
         header.setEllipsize(TextUtils.TruncateAt.END);
         header.setTextColor(getThemedColor(Theme.key_dialogTextBlack));
         header.setText(LocaleController.getString("AttachMediaPreview", R.string.AttachMediaPreview));
-        header.setTypeface(AndroidUtilities.getTypeface("fonts/rmedium.ttf"));
+        header.setTypeface(AndroidUtilities.bold());
         header.setCompoundDrawablePadding(AndroidUtilities.dp(4));
         header.setPadding(0, 0, AndroidUtilities.dp(10), 0);
         header.setAlpha(0);
@@ -212,7 +212,7 @@ public class ChatAttachAlertPhotoLayoutPreview extends ChatAttachAlert.AttachAle
     private boolean shown = false;
 
     @Override
-    void onShow(ChatAttachAlert.AttachAlertLayout previousLayout) {
+    public void onShow(ChatAttachAlert.AttachAlertLayout previousLayout) {
         shown = true;
         if (previousLayout instanceof ChatAttachAlertPhotoLayout) {
             this.photoLayout = (ChatAttachAlertPhotoLayout) previousLayout;
@@ -233,6 +233,7 @@ public class ChatAttachAlertPhotoLayoutPreview extends ChatAttachAlert.AttachAle
                     if (parentAlert.getPhotoLayout() != null) {
                         parentAlert.getPhotoLayout().previewItem.setIcon(R.drawable.ic_ab_back);
                         parentAlert.getPhotoLayout().previewItem.setText(LocaleController.getString(R.string.Back));
+                        parentAlert.getPhotoLayout().previewItem.setRightIcon(0);
                     }
                 }
             }, 250);
@@ -251,7 +252,7 @@ public class ChatAttachAlertPhotoLayoutPreview extends ChatAttachAlert.AttachAle
     }
 
     @Override
-    void onHide() {
+    public void onHide() {
         shown = false;
         if (headerAnimator != null) {
             headerAnimator.cancel();
@@ -263,6 +264,7 @@ public class ChatAttachAlertPhotoLayoutPreview extends ChatAttachAlert.AttachAle
             if (parentAlert.getPhotoLayout() != null) {
                 parentAlert.getPhotoLayout().previewItem.setIcon(R.drawable.msg_view_file);
                 parentAlert.getPhotoLayout().previewItem.setText(LocaleController.getString(R.string.AttachMediaPreviewButton));
+                parentAlert.getPhotoLayout().previewItem.setRightIcon(R.drawable.msg_arrowright);
             }
         }
 
@@ -270,12 +272,12 @@ public class ChatAttachAlertPhotoLayoutPreview extends ChatAttachAlert.AttachAle
     }
 
     @Override
-    int getSelectedItemsCount() {
+    public int getSelectedItemsCount() {
         return groupsView.getPhotosCount();
     }
 
     @Override
-    void onHidden() {
+    public void onHidden() {
         draggingCell = null;
         if (undoView != null) {
             undoView.hide(false, 0);
@@ -290,17 +292,17 @@ public class ChatAttachAlertPhotoLayoutPreview extends ChatAttachAlert.AttachAle
     }
 
     @Override
-    int getFirstOffset() {
+    public int getFirstOffset() {
         return getListTopPadding() + AndroidUtilities.dp(56);
     }
 
     @Override
-    boolean shouldHideBottomButtons() {
+    public boolean shouldHideBottomButtons() {
         return true;
     }
 
     @Override
-    void applyCaption(CharSequence text) {
+    public void applyCaption(CharSequence text) {
         if (photoLayout != null) {
             photoLayout.applyCaption(text);
         }
@@ -776,12 +778,12 @@ public class ChatAttachAlertPhotoLayoutPreview extends ChatAttachAlert.AttachAle
     }
 
     @Override
-    int getListTopPadding() {
+    public int getListTopPadding() {
         return listView.getPaddingTop()/* + AndroidUtilities.dp(9)*/;
     }
 
     @Override
-    int getCurrentItemTop() {
+    public int getCurrentItemTop() {
         if (listView.getChildCount() <= 0) {
             listView.setTopGlowOffset(listView.getPaddingTop());
             return Integer.MAX_VALUE;
@@ -826,18 +828,18 @@ public class ChatAttachAlertPhotoLayoutPreview extends ChatAttachAlert.AttachAle
     }
 
     @Override
-    void scrollToTop() {
+    public void scrollToTop() {
 //        scrollView.smoothScrollTo(0, 0);
         listView.smoothScrollToPosition(0);
     }
 
     @Override
-    int needsActionBar() {
+    public int needsActionBar() {
         return 1;
     }
 
     @Override
-    boolean onBackPressed() {
+    public boolean onBackPressed() {
         parentAlert.updatePhotoPreview(false);
         return true;
     }
@@ -852,7 +854,7 @@ public class ChatAttachAlertPhotoLayoutPreview extends ChatAttachAlert.AttachAle
     }
 
     @Override
-    void onMenuItemClick(int id) {
+    public void onMenuItemClick(int id) {
         try {
             parentAlert.getPhotoLayout().onMenuItemClick(id);
         } catch (Exception ignore) {}
@@ -908,7 +910,7 @@ public class ChatAttachAlertPhotoLayoutPreview extends ChatAttachAlert.AttachAle
     }
 
     @Override
-    void onSelectedItemsCountChanged(int count) {
+    public void onSelectedItemsCountChanged(int count) {
         if (count > 1) {
             parentAlert.selectedMenuItem.showSubItem(ChatAttachAlertPhotoLayout.group);
         } else {
@@ -2186,7 +2188,7 @@ public class ChatAttachAlertPhotoLayoutPreview extends ChatAttachAlert.AttachAle
 
                         if (textPaint == null) {
                             textPaint = new TextPaint(Paint.ANTI_ALIAS_FLAG);
-                            textPaint.setTypeface(AndroidUtilities.getTypeface("fonts/rmedium.ttf"));
+                            textPaint.setTypeface(AndroidUtilities.bold());
                         }
                         textPaint.setColor(getThemedColor(Theme.key_chat_attachCheckBoxCheck));
                         final float textSize;
@@ -2229,7 +2231,7 @@ public class ChatAttachAlertPhotoLayoutPreview extends ChatAttachAlert.AttachAle
                         if (videoDurationBitmap == null || videoDurationBitmapText == null || !videoDurationBitmapText.equals(durationText)) {
                             if (videoDurationTextPaint == null) {
                                 videoDurationTextPaint = new TextPaint(Paint.ANTI_ALIAS_FLAG);
-                                videoDurationTextPaint.setTypeface(AndroidUtilities.getTypeface("fonts/rmedium.ttf"));
+                                videoDurationTextPaint.setTypeface(AndroidUtilities.bold());
                                 videoDurationTextPaint.setColor(0xffffffff);
                             }
                             final float textSize = AndroidUtilities.dp(12);

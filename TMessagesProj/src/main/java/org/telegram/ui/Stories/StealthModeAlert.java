@@ -4,11 +4,9 @@ import android.content.Context;
 import android.graphics.PorterDuff;
 import android.graphics.PorterDuffColorFilter;
 import android.text.Layout;
-import android.text.SpannableStringBuilder;
 import android.util.TypedValue;
 import android.view.Gravity;
 import android.view.HapticFeedbackConstants;
-import android.view.View;
 import android.widget.FrameLayout;
 import android.widget.ImageView;
 import android.widget.LinearLayout;
@@ -23,30 +21,39 @@ import org.telegram.messenger.R;
 import org.telegram.messenger.UserConfig;
 import org.telegram.tgnet.ConnectionsManager;
 import org.telegram.tgnet.TLRPC;
+import org.telegram.tgnet.tl.TL_stories;
 import org.telegram.ui.ActionBar.BaseFragment;
 import org.telegram.ui.ActionBar.BottomSheet;
 import org.telegram.ui.ActionBar.SimpleTextView;
 import org.telegram.ui.ActionBar.Theme;
 import org.telegram.ui.Components.Bulletin;
 import org.telegram.ui.Components.BulletinFactory;
-import org.telegram.ui.Components.ColoredImageSpan;
 import org.telegram.ui.Components.LayoutHelper;
 import org.telegram.ui.Components.Premium.PremiumButtonView;
 import org.telegram.ui.Components.Premium.PremiumFeatureBottomSheet;
 import org.telegram.ui.Components.ScaleStateListAnimator;
 import org.telegram.ui.LaunchActivity;
 import org.telegram.ui.PremiumPreviewFragment;
-import org.telegram.ui.Stories.recorder.ButtonWithCounterView;
 
 import java.util.Locale;
 
 public class StealthModeAlert extends BottomSheet {
 
-    private final PremiumButtonView button;
-    boolean stealthModeIsActive;
+    public interface Listener {
+        void onButtonClicked(boolean isStealthModeEnabled);
+    }
 
-    public StealthModeAlert(Context context, float topOffset, Theme.ResourcesProvider resourcesProvider) {
+    public static final int TYPE_FROM_STORIES = 0;
+    public static final int TYPE_FROM_DIALOGS = 1;
+
+    private final PremiumButtonView button;
+    private boolean stealthModeIsActive;
+    private int type;
+    private Listener listener;
+
+    public StealthModeAlert(Context context, float topOffset, int type, Theme.ResourcesProvider resourcesProvider) {
         super(context, false, resourcesProvider);
+        this.type = type;
         FrameLayout frameLayout = new FrameLayout(getContext()) {
             @Override
             protected void onAttachedToWindow() {
@@ -78,9 +85,9 @@ public class StealthModeAlert extends BottomSheet {
 
         TextView title = new TextView(getContext());
         title.setTextSize(TypedValue.COMPLEX_UNIT_DIP, 20);
-        title.setTypeface(AndroidUtilities.getTypeface("fonts/rmedium.ttf"));
+        title.setTypeface(AndroidUtilities.bold());
         title.setTextColor(Theme.getColor(Theme.key_windowBackgroundWhiteBlackText, resourcesProvider));
-        title.setText(LocaleController.getString("StealthMode", R.string.StealthMode));
+        title.setText(LocaleController.getString("StealthModeTitle", R.string.StealthModeTitle));
         linearLayout.addView(title, LayoutHelper.createLinear(LayoutHelper.WRAP_CONTENT, LayoutHelper.WRAP_CONTENT, Gravity.CENTER_HORIZONTAL));
 
         SimpleTextView subtitle = new SimpleTextView(getContext());
@@ -110,7 +117,7 @@ public class StealthModeAlert extends BottomSheet {
 
         linearLayout.addView(itemCell2, LayoutHelper.createLinear(LayoutHelper.MATCH_PARENT, LayoutHelper.WRAP_CONTENT,0, 0, 10, 0, 0));
 
-        button = new PremiumButtonView(context, AndroidUtilities.dp(8), true);
+        button = new PremiumButtonView(context, AndroidUtilities.dp(8), true, resourcesProvider);
         button.drawGradient = false;
         button.overlayTextView.getDrawable().setSplitByWords(false);
         button.setIcon(R.raw.unlock_icon);
@@ -145,15 +152,18 @@ public class StealthModeAlert extends BottomSheet {
             } else {
                 if (stealthModeIsActive) {
                     dismiss();
+                    if (listener != null) {
+                        listener.onButtonClicked(false);
+                    }
                     return;
                 }
                 StoriesController storiesController = MessagesController.getInstance(currentAccount).getStoriesController();
-                TLRPC.TL_storiesStealthMode stealthMode = storiesController.getStealthMode();
+                TL_stories.TL_storiesStealthMode stealthMode = storiesController.getStealthMode();
                 if (stealthMode == null || ConnectionsManager.getInstance(currentAccount).getCurrentTime() > stealthMode.cooldown_until_date) {
-                    TLRPC.TL_stories_activateStealthMode req = new TLRPC.TL_stories_activateStealthMode();
+                    TL_stories.TL_stories_activateStealthMode req = new TL_stories.TL_stories_activateStealthMode();
                     req.future = true;
                     req.past = true;
-                    stealthMode = new TLRPC.TL_storiesStealthMode();
+                    stealthMode = new TL_stories.TL_storiesStealthMode();
                     stealthMode.flags |= 1 + 2;
                     stealthMode.cooldown_until_date = ConnectionsManager.getInstance(currentAccount).getCurrentTime() +MessagesController.getInstance(currentAccount).stealthModeCooldown;
                     stealthMode.active_until_date = ConnectionsManager.getInstance(currentAccount).getCurrentTime() + MessagesController.getInstance(currentAccount).stealthModeFuture;
@@ -163,9 +173,17 @@ public class StealthModeAlert extends BottomSheet {
                     }));
                     containerView.performHapticFeedback(HapticFeedbackConstants.KEYBOARD_TAP);
                     dismiss();
-                    showStealthModeEnabledBulletin();
+                    if (type == TYPE_FROM_STORIES) {
+                        showStealthModeEnabledBulletin();
+                    }
+                    if (listener != null) {
+                        listener.onButtonClicked(true);
+                    }
                 } else if (stealthModeIsActive) {
                     dismiss();
+                    if (listener != null) {
+                        listener.onButtonClicked(false);
+                    }
                 } else {
                     BulletinFactory factory = BulletinFactory.of(container, resourcesProvider);
                     if (factory != null) {
@@ -178,11 +196,15 @@ public class StealthModeAlert extends BottomSheet {
         });
     }
 
+    public void setListener(Listener listener) {
+        this.listener = listener;
+    }
+
     public static void showStealthModeEnabledBulletin() {
         BaseFragment fragment = LaunchActivity.getLastFragment();
         BulletinFactory factory;
-        if (fragment.storyViewer != null) {
-            factory = BulletinFactory.of(fragment.storyViewer.windowView, fragment.storyViewer.getResourceProvider());
+        if (fragment.getLastStoryViewer() != null) {
+            factory = BulletinFactory.of(fragment.getLastStoryViewer().windowView, fragment.getLastStoryViewer().getResourceProvider());
         } else {
             factory = BulletinFactory.global();
         }
@@ -202,13 +224,17 @@ public class StealthModeAlert extends BottomSheet {
 
     private void updateButton(boolean animated) {
         StoriesController storiesController = MessagesController.getInstance(currentAccount).getStoriesController();
-        TLRPC.TL_storiesStealthMode stealthMode = storiesController.getStealthMode();
+        TL_stories.TL_storiesStealthMode stealthMode = storiesController.getStealthMode();
         if (stealthMode != null && ConnectionsManager.getInstance(currentAccount).getCurrentTime() < stealthMode.active_until_date) {
             stealthModeIsActive = true;
             button.setOverlayText(LocaleController.getString("StealthModeIsActive", R.string.StealthModeIsActive), true, animated);
             button.overlayTextView.setTextColor(Theme.getColor(Theme.key_featuredStickers_buttonText));
         } else if (stealthMode == null || ConnectionsManager.getInstance(currentAccount).getCurrentTime() > stealthMode.cooldown_until_date) {
-            button.setOverlayText(LocaleController.getString("EnableStealthMode", R.string.EnableStealthMode), true, animated);
+            if (type == TYPE_FROM_STORIES) {
+                button.setOverlayText(LocaleController.getString("EnableStealthMode", R.string.EnableStealthMode), true, animated);
+            } else if (type == TYPE_FROM_DIALOGS) {
+                button.setOverlayText(LocaleController.getString(R.string.EnableStealthModeAndOpenStory), true, animated);
+            }
             button.overlayTextView.setTextColor(Theme.getColor(Theme.key_featuredStickers_buttonText));
         } else {
             long timeLeft = stealthMode.cooldown_until_date - ConnectionsManager.getInstance(currentAccount).getCurrentTime();
@@ -236,7 +262,7 @@ public class StealthModeAlert extends BottomSheet {
             addView(imageView, LayoutHelper.createFrame(28, 28, 0, 25, 12, 16, 0));
 
             textView = new TextView(context);
-            textView.setTypeface(AndroidUtilities.getTypeface("fonts/rmedium.ttf"));
+            textView.setTypeface(AndroidUtilities.bold());
             textView.setTextColor(Theme.getColor(Theme.key_windowBackgroundWhiteBlackText, resourcesProvider));
             textView.setTextSize(TypedValue.COMPLEX_UNIT_DIP, 14);
             addView(textView, LayoutHelper.createFrame(LayoutHelper.MATCH_PARENT, LayoutHelper.WRAP_CONTENT, 0, 68, 8, 16, 0));

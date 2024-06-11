@@ -43,7 +43,9 @@ import org.telegram.ui.ActionBar.BaseFragment;
 import org.telegram.ui.ActionBar.Theme;
 import org.telegram.ui.Adapters.MentionsAdapter;
 import org.telegram.ui.Adapters.PaddedListAdapter;
+import org.telegram.ui.Business.QuickRepliesActivity;
 import org.telegram.ui.Cells.ContextLinkCell;
+import org.telegram.ui.Cells.MentionCell;
 import org.telegram.ui.Cells.StickerCell;
 import org.telegram.ui.ChatActivity;
 import org.telegram.ui.ContentPreviewViewer;
@@ -69,7 +71,7 @@ public class MentionsContainerView extends BlurredFrameLayout implements Notific
     private RecyclerListView.OnItemClickListener mentionsOnItemClickListener;
     private Delegate delegate;
 
-    public MentionsContainerView(@NonNull Context context, long dialogId, int threadMessageId, BaseFragment baseFragment, SizeNotifierFrameLayout container, Theme.ResourcesProvider resourcesProvider) {
+    public MentionsContainerView(@NonNull Context context, long dialogId, long threadMessageId, BaseFragment baseFragment, SizeNotifierFrameLayout container, Theme.ResourcesProvider resourcesProvider) {
         super(context, container);
         this.baseFragment = baseFragment;
         this.sizeNotifierFrameLayout = container;
@@ -270,6 +272,10 @@ public class MentionsContainerView extends BlurredFrameLayout implements Notific
 
     }
 
+    protected void onAnimationScroll() {
+
+    }
+
     public MentionsListView getListView() {
         return listView;
     }
@@ -321,6 +327,7 @@ public class MentionsContainerView extends BlurredFrameLayout implements Notific
         containerPadding = AndroidUtilities.dp(2 + (topPadding ? 2 : 0));
 
         float r = AndroidUtilities.dp(6);
+        float wasContainerTop = containerTop;
         if (reversed) {
             int paddingViewTop = paddedAdapter.paddingViewAttached ? paddedAdapter.paddingView.getTop() : getHeight();
             float top = Math.max(0, paddingViewTop + listView.getTranslationY()) + containerPadding;
@@ -343,6 +350,9 @@ public class MentionsContainerView extends BlurredFrameLayout implements Notific
             if (r > 0) {
                 rect.bottom += (int) r;
             }
+        }
+        if (Math.abs(wasContainerTop - containerTop) > 0.1f) {
+            onAnimationScroll();
         }
 
         if (paint == null) {
@@ -504,6 +514,7 @@ public class MentionsContainerView extends BlurredFrameLayout implements Notific
                         );
                 listViewTranslationAnimator.addUpdateListener((anm, val, vel) -> {
                     listView.setTranslationY(val);
+                    onAnimationScroll();
                     hideT = AndroidUtilities.lerp(fromHideT, toHideT, (val - fromTranslation) / (toTranslation - fromTranslation));
                 });
                 if (forceZeroHeight) {
@@ -571,7 +582,7 @@ public class MentionsContainerView extends BlurredFrameLayout implements Notific
                     object.parentView = getListView();
                     object.imageReceiver = imageReceiver;
                     object.thumb = imageReceiver.getBitmapSafe();
-                    object.radius = imageReceiver.getRoundRadius();
+                    object.radius = imageReceiver.getRoundRadius(true);
                     return object;
                 }
             }
@@ -873,7 +884,15 @@ public class MentionsContainerView extends BlurredFrameLayout implements Notific
     @Override
     public void didReceivedNotification(int id, int account, Object... args) {
         if (id == NotificationCenter.emojiLoaded) {
-            getListView().invalidateViews();
+            AndroidUtilities.forEachViews(listView, view -> {
+                if (view instanceof MentionCell) {
+                    ((MentionCell) view).invalidateEmojis();
+                } else if (view instanceof QuickRepliesActivity.QuickReplyView) {
+                    ((QuickRepliesActivity.QuickReplyView) view).invalidateEmojis();
+                } else {
+                    view.invalidate();
+                }
+            });
         }
     }
 
