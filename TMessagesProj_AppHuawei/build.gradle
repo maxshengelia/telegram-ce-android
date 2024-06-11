@@ -59,14 +59,14 @@ android {
 
     signingConfigs {
         debug {
-            storeFile file("../TMessagesProj/config/release.keystore")
+            storeFile file("../signing/release.keystore")
             storePassword signingProps.RELEASE_STORE_PASSWORD
             keyAlias signingProps.RELEASE_KEY_ALIAS
             keyPassword signingProps.RELEASE_KEY_PASSWORD
         }
 
         release {
-            storeFile file("../TMessagesProj/config/release.keystore")
+            storeFile file("../signing/release.keystore")
             storePassword signingProps.RELEASE_STORE_PASSWORD
             keyAlias signingProps.RELEASE_KEY_ALIAS
             keyPassword signingProps.RELEASE_KEY_PASSWORD
