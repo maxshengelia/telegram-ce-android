@@ -1,4 +1,6 @@
+ls
 cd -
+ls
 
 file="gradle.properties"
 propVersion="rabbit.android.build"
