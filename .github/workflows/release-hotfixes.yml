@@ -30,7 +30,7 @@ jobs:
           git config user.name MaksimillanoBot
           git config user.email shengelia.max@gmail.com
           git fetch
-          git checkout -b develop origin/develop
+          git checkout develop origin/develop
 
       - name: Check if there are commit ahead of current master
         id: needRelease
