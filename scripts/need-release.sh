@@ -1,7 +1,7 @@
 git checkout develop
-tagDevelop=$(git tag --points-at develop)
-echo ${tagDevelop}
-if [[ ${tagDevelop} == "v"* ]]; then
+lastCommitMsg=$(git log -1 --pretty=%B)
+echo ${lastCommitMsg}
+if [[ ${lastCommitMsg} == "Merge Version"* ]]; then
   echo "Do not need release"
   echo "NeedRelease=false" >> "$GITHUB_OUTPUT"
 else
