@@ -1,7 +1,7 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
-    <string name="AppName">Telegram CE</string>
-    <string name="AppNameBeta">Telegram CE Beta</string>
+    <string name="AppName">Rabbit Messenger</string>
+    <string name="AppNameBeta">Rabbit Messenger Beta</string>
     <string name="LanguageName">English</string>
     <string name="English">English</string>
     <string name="LanguageNameInEnglish">English</string>

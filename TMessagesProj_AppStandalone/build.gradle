@@ -113,7 +113,7 @@ android {
         }
     }
 
-    defaultConfig.versionCode = Integer.parseInt(APP_VERSION_CODE)
+    defaultConfig.versionCode = Integer.parseInt(project.property("rabbit.android.versionCode"))
 
     applicationVariants.all { variant ->
         variant.outputs.all { output ->

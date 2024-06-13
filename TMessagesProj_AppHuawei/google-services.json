@@ -1,65 +1,45 @@
 {
   "project_info": {
-    "project_number": "952689195129",
-    "project_id": "telegram-ce",
-    "storage_bucket": "telegram-ce.appspot.com"
+    "project_number": "1006987693436",
+    "project_id": "rabbit-messenger-tg",
+    "storage_bucket": "rabbit-messenger-tg.appspot.com"
   },
   "client": [
     {
       "client_info": {
-        "mobilesdk_app_id": "1:952689195129:android:d41599fba631822223fca8",
+        "mobilesdk_app_id": "1:1006987693436:android:5146d63614b06bcf20e8f9",
         "android_client_info": {
-          "package_name": "community.telegram.messenger"
+          "package_name": "onl.rabbit.messenger"
         }
       },
-      "oauth_client": [
-        {
-          "client_id": "952689195129-5gc3v51iegttm2mqnnbla1o15gec64is.apps.googleusercontent.com",
-          "client_type": 3
-        }
-      ],
+      "oauth_client": [],
       "api_key": [
         {
-          "current_key": "AIzaSyAA-dZ_6YpL6Uv6JrPSCDECbE-FcCYrq5w"
+          "current_key": "AIzaSyACsbqTpBuF3JzfL3p7wJfMRp9X_cKMs0k"
         }
       ],
       "services": {
         "appinvite_service": {
-          "other_platform_oauth_client": [
-            {
-              "client_id": "952689195129-5gc3v51iegttm2mqnnbla1o15gec64is.apps.googleusercontent.com",
-              "client_type": 3
-            }
-          ]
+          "other_platform_oauth_client": []
         }
       }
     },
     {
       "client_info": {
-        "mobilesdk_app_id": "1:952689195129:android:7ec7ed0b48529aad23fca8",
+        "mobilesdk_app_id": "1:1006987693436:android:85b1b7be73129e6c20e8f9",
         "android_client_info": {
-          "package_name": "community.telegram.messenger.beta"
+          "package_name": "onl.rabbit.messenger.beta"
         }
       },
-      "oauth_client": [
-        {
-          "client_id": "952689195129-5gc3v51iegttm2mqnnbla1o15gec64is.apps.googleusercontent.com",
-          "client_type": 3
-        }
-      ],
+      "oauth_client": [],
       "api_key": [
         {
-          "current_key": "AIzaSyAA-dZ_6YpL6Uv6JrPSCDECbE-FcCYrq5w"
+          "current_key": "AIzaSyACsbqTpBuF3JzfL3p7wJfMRp9X_cKMs0k"
         }
       ],
       "services": {
         "appinvite_service": {
-          "other_platform_oauth_client": [
-            {
-              "client_id": "952689195129-5gc3v51iegttm2mqnnbla1o15gec64is.apps.googleusercontent.com",
-              "client_type": 3
-            }
-          ]
+          "other_platform_oauth_client": []
         }
       }
     }
