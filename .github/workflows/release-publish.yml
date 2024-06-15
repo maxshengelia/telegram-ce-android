@@ -38,12 +38,12 @@ jobs:
       - name: Set Release Tag
         run: sh ./scripts/release-tag.sh
 
-      - name: Assemble Release Bundle
+      - name: Get app version
         id: versionGetStep
         run: sh ./scripts/get-version.sh
 
       - name: Assemble Release Bundle
-        run: ./gradlew bundleRelease
+        run: ./gradlew TMessagesProj_App:bundleRelease
 
       - uses: r0adkll/upload-google-play@v1
         with:
