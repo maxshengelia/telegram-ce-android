@@ -14,9 +14,9 @@ jobs:
 
     steps:
       - uses: actions/checkout@v4
-
-      - name: Grant execute permission for gradlew
-        run: chmod +x gradlew
+        with:
+          submodules: recursive
+          token: ${{ secrets.TOKEN_GITHUB }}
 
       - name: Git configuration and checkout develop
         run: |
@@ -24,5 +24,4 @@ jobs:
           git config user.email shengelia.max@gmail.com
           git fetch
           git checkout develop
-          git config submodule.signing.url "https://maxshengelia:${{ secrets.TOKEN_GITHUB }}@github.com:maxshengelia/telegram-signing.git"
           git submodule update --init --recursive
