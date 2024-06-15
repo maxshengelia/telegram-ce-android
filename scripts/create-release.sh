@@ -7,10 +7,8 @@ versionCode=$(grep "${propVersionCode}" ${file} | cut -d'=' -f2)
 echo "Got version=${version}"
 echo "Got versionCode=${versionCode}"
 
-cd scripts
-
 chmod +x semver
-newVersion=$(./semver bump prerel alpha.. ${version})
+newVersion=$(./scripts/semver bump prerel alpha.. ${version})
 newVersionCode=$((versionCode + 1))
 
 releaseBranch="release/${newVersion}"
