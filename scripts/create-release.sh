@@ -1,13 +1,16 @@
-cd -
-
 file="gradle.properties"
 propVersion="rabbit.android.build"
 propVersionCode="rabbit.android.versionCode"
 version=$(grep "${propVersion}" ${file} | cut -d'=' -f2)
 versionCode=$(grep "${propVersionCode}" ${file} | cut -d'=' -f2)
 
+echo "Got version=${version}"
+echo "Got versionCode=${versionCode}"
+
 cd scripts
-newVersion=$(sh ./semver.sh bump prerel alpha.. ${version})
+
+chmod +x semver
+newVersion=$(./semver bump prerel alpha.. ${version})
 newVersionCode=$((versionCode + 1))
 
 releaseBranch="release/${newVersion}"

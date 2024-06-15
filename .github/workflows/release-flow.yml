@@ -1,7 +1,9 @@
 on:
-  workflow_dispatch:
+  schedule:
+    # * is a special character in YAML so you have to quote this string
+    - cron:  '0 2 * * MON'
 
-name: Release Hotfixes
+name: Release Flow
 permissions: write-all
 
 jobs:
@@ -23,7 +25,7 @@ jobs:
           git config user.name MaksimillanoBot
           git config user.email shengelia.max@gmail.com
           git fetch
-          git checkout develop
+          git checkout -b develop origin/develop
 
       - name: Check if there are commit ahead of current master
         id: needRelease

@@ -1,0 +1,33 @@
+on:
+  pull_request:
+    types:
+      - opened
+  pull_request_review:
+    types:
+      - submitted
+  check_suite:
+    types:
+      - completed
+  status: {}
+
+name: Automerge
+
+jobs:
+  automerge:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Grant execute permission for getVersion
+        run: chmod 755 scripts/get-version.sh
+
+      - name: Resolve AppVersion
+        id: versionGetStep
+        run: sh ./scripts/get-version.sh
+
+      - name: automerge
+        id: automerge
+        uses: "pascalgn/automerge-action@v0.15.6"
+        env:
+          GITHUB_TOKEN: "${{ secrets.TOKEN_GITHUB }}"
+          MERGE_COMMIT_MESSAGE: "Merge Version ${{ steps.versionGetStep.outputs.AppVersion }}"
