@@ -16,8 +16,8 @@ cd -
 releaseBranch="release/${newVersion}"
 git checkout -b "${releaseBranch}"
 
-sed -i 's\${propVersion}=${version}\${propVersion}=${newVersion}\g' gradle.properties
-sed -i 's\${propVersionCode}=${versionCode}\${propVersionCode}=${newVersionCode}\g' gradle.properties
+sed -i "s|$propVersion=$version|$propVersion=$newVersion|g" gradle.properties
+sed -i "s|$propVersionCode=$versionCode|$propVersionCode=$newVersionCode|g" gradle.properties
 
 git add --all
 git commit -m "Version Updated v${newVersion}"
