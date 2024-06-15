@@ -1,7 +1,7 @@
 on:
   workflow_dispatch:
 
-name: Release Hotfixes
+name: Example Check
 permissions: write-all
 
 jobs:
