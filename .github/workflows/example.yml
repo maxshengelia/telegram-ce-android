@@ -39,8 +39,8 @@ jobs:
           releaseBranch="release/${newVersion}"
           git checkout -b "${releaseBranch}"
           
-          echo "we will set ${propVersion}=${version}\\${propVersion}=${newVersion}"
-          sed -i 's\${propVersion}=${version}\\${propVersion}=${newVersion}\g' gradle.properties
-          sed -i 's\${propVersionCode}=${versionCode}\\${propVersionCode}=${newVersionCode}\g' gradle.properties
+          echo "we will set $propVersion=$version\$propVersion=$newVersion"
+          sed -i "s\$propVersion=$version\$propVersion=$newVersion\g" gradle.properties
+          sed -i "s\$propVersionCode=$versionCode\$propVersionCode=$newVersionCode\g" gradle.properties
           echo $(grep "${propVersion}" ${file} | cut -d'=' -f2)
 
