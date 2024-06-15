@@ -18,29 +18,13 @@ jobs:
           submodules: recursive
           token: ${{ secrets.TOKEN_GITHUB }}
 
-      - name: Git configuration and checkout develop
-        run: |
-          file="gradle.properties"
-          propVersion="rabbit.android.build"
-          propVersionCode="rabbit.android.versionCode"
-          version=$(grep "${propVersion}" ${file} | cut -d'=' -f2)
-          versionCode=$(grep "${propVersionCode}" ${file} | cut -d'=' -f2)
-          
-          echo "Got version=${version}"
-          echo "Got versionCode=${versionCode}"
-          
-          cd scripts
-          chmod +x semver
-          newVersion=$(./semver bump prerel alpha.. ${version})
-          newVersionCode=$((versionCode + 1))
-          cd -
-          
-          ls
-          releaseBranch="release/${newVersion}"
-          git checkout -b "${releaseBranch}"
-          
-          echo "we will set $propVersion=$version\$propVersion=$newVersion"
-          sed -i "s|$propVersion=$version|$propVersion=$newVersion|g" gradle.properties
-          sed -i "s|$propVersionCode=$versionCode|$propVersionCode=$newVersionCode|g" gradle.properties
-          echo $(grep "${propVersion}" ${file} | cut -d'=' -f2)
+      - uses: r0adkll/upload-google-play@v1
+        with:
+          serviceAccountJsonPlainText: ${{ secrets.SERVICE_ACCOUNT_JSON }}
+          packageName: onl.rabbit.messenger
+          releaseFiles: bundle/rabbit-latest-release.aab
+          status: draft
+          track: internal
+#          whatsNewDirectory: distribution/whatsnew
+          mappingFile: bundle/mapping.txt
 
