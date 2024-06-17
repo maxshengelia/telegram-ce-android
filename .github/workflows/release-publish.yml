@@ -52,5 +52,5 @@ jobs:
           releaseFiles: TMessagesProj_App/build/outputs/bundle/afatRelease/TMessagesProj_App-afat-release.aab
           status: draft
           track: internal
-          whatsNewDirectory: distribution/whatsnew
+#          whatsNewDirectory: distribution/whatsnew
           mappingFile: TMessagesProj_App/build/outputs/mapping/afatRelease/mapping.txt
